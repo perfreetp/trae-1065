@@ -161,11 +161,13 @@ export const ReportTable: React.FC<ReportTableProps> = ({
   const summaryByType = useMemo(() => {
     const typeField = filterOptions.typeField || 'type';
     const statusField = filterOptions.statusField || 'status';
+    const valueField = summaryFields.length > 0 ? summaryFields[0].valueField : 'value';
     const result: Record<string, {
       count: number;
       valueRange: { min: number; max: number } | null;
       abnormalCount: number;
       typeName: string;
+      hasNumericValue: boolean;
     }> = {};
 
     const typeNames: Record<string, string> = {
@@ -177,10 +179,12 @@ export const ReportTable: React.FC<ReportTableProps> = ({
       risk: '风险点',
     };
 
+    const typesWithNumericValue = ['rain', 'water', 'reservoir'];
+
     filteredData.forEach((record) => {
       const type = record[typeField] || 'unknown';
       const status = record[statusField];
-      const value = summaryFields.length > 0 ? record[summaryFields[0].valueField] : null;
+      const value = record[valueField];
 
       if (!result[type]) {
         result[type] = {
@@ -188,12 +192,13 @@ export const ReportTable: React.FC<ReportTableProps> = ({
           valueRange: null,
           abnormalCount: 0,
           typeName: typeNames[type] || type,
+          hasNumericValue: typesWithNumericValue.includes(type),
         };
       }
 
       result[type].count++;
 
-      if (typeof value === 'number') {
+      if (result[type].hasNumericValue && typeof value === 'number') {
         if (result[type].valueRange === null) {
           result[type].valueRange = { min: value, max: value };
         } else {
@@ -251,11 +256,11 @@ export const ReportTable: React.FC<ReportTableProps> = ({
     onSort?.(column.dataIndex, newOrder);
   };
 
-  const exportToCSV = () => {
+  const exportToCSV = (mode: 'detail' | 'summary' | 'both' = exportMode) => {
     const exportableColumns = columns.filter((c) => c.exportable !== false);
     let csvParts: string[] = [];
 
-    if (exportMode === 'summary' || exportMode === 'both') {
+    if (mode === 'summary' || mode === 'both') {
       csvParts.push('=== 汇总统计 ===');
       csvParts.push('按类型统计:');
       csvParts.push('类型,数量,异常数,最小值,最大值');
@@ -271,23 +276,27 @@ export const ReportTable: React.FC<ReportTableProps> = ({
       csvParts.push(`注意,${summaryByStatus.attention}`);
       csvParts.push(`预警,${summaryByStatus.warning}`);
       csvParts.push(`危险,${summaryByStatus.danger}`);
-      if (exportMode === 'both') csvParts.push('');
+      if (mode === 'both') csvParts.push('');
     }
 
-    if (exportMode === 'detail' || exportMode === 'both') {
-      if (exportMode === 'both') csvParts.push('=== 明细数据 ===');
-      const headers = exportableColumns.map((c) => c.title).join(',');
-      const rows = sortedData.map((record) =>
-        exportableColumns
-          .map((col) => {
-            const value = record[col.dataIndex];
-            if (value === null || value === undefined) return '';
-            const strValue = String(value).replace(/"/g, '""');
-            return `"${strValue}"`;
-          })
-          .join(',')
-      );
-      csvParts.push(headers, ...rows);
+    if (mode === 'detail' || mode === 'both') {
+      if (mode === 'both') csvParts.push('=== 明细数据 ===');
+      if (sortedData.length === 0) {
+        csvParts.push('暂无符合条件的数据');
+      } else {
+        const headers = exportableColumns.map((c) => c.title).join(',');
+        const rows = sortedData.map((record) =>
+          exportableColumns
+            .map((col) => {
+              const value = record[col.dataIndex];
+              if (value === null || value === undefined) return '';
+              const strValue = String(value).replace(/"/g, '""');
+              return `"${strValue}"`;
+            })
+            .join(',')
+        );
+        csvParts.push(headers, ...rows);
+      }
     }
 
     const csv = csvParts.join('\n');
@@ -465,7 +474,7 @@ export const ReportTable: React.FC<ReportTableProps> = ({
                         key={item.key}
                         onClick={() => {
                           setExportMode(item.key as 'detail' | 'summary' | 'both');
-                          exportToCSV();
+                          exportToCSV(item.key as 'detail' | 'summary' | 'both');
                         }}
                         style={{
                           padding: '8px 12px',
@@ -738,9 +747,13 @@ export const ReportTable: React.FC<ReportTableProps> = ({
                         </span>
                       )}
                     </div>
-                    {data.valueRange && (
+                    {data.hasNumericValue ? (
                       <div style={{ fontSize: '10px', color: theme.colors.text.secondary, marginTop: '2px' }}>
-                        值范围: {data.valueRange.min.toFixed(1)} ~ {data.valueRange.max.toFixed(1)}
+                        值范围: {data.valueRange ? `${data.valueRange.min.toFixed(1)} ~ ${data.valueRange.max.toFixed(1)}` : '-'}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '10px', color: theme.colors.text.disabled, marginTop: '2px' }}>
+                        无数值范围
                       </div>
                     )}
                   </div>

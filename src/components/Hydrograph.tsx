@@ -4,13 +4,24 @@ import { useTheme } from '../theme/ThemeProvider';
 import { useLinkage } from '../context/LinkageContext';
 import { useDataFilter } from '../context/DataContext';
 import { classNames, formatNumber, formatTime } from '../utils';
-import { TimeSeriesData, ThresholdLine, BaseComponentProps } from '../types';
+import { TimeSeriesData, ThresholdLine, BaseComponentProps, StationType } from '../types';
 import { Empty } from './common/Empty';
+
+export interface CompareDataset {
+  stationId: string;
+  stationName: string;
+  color: string;
+  data: TimeSeriesData[];
+  mode?: 'water' | 'flow' | 'dual';
+  unit?: string;
+  hasData?: boolean;
+}
 
 export interface HydrographProps extends BaseComponentProps {
   data?: TimeSeriesData[];
   dataYoY?: TimeSeriesData[];
   dataMoM?: TimeSeriesData[];
+  compareDatasets?: CompareDataset[];
   title?: string;
   unit?: string;
   unit2?: string;
@@ -36,6 +47,7 @@ export const Hydrograph: React.FC<HydrographProps> = ({
   data: propData = [],
   dataYoY = [],
   dataMoM = [],
+  compareDatasets = [],
   title,
   unit = 'm',
   unit2 = 'm³/s',
@@ -109,6 +121,71 @@ export const Hydrograph: React.FC<HydrographProps> = ({
   }, [filteredData, enabledThresholds, highlightOverThreshold]);
 
   const chartOption = useMemo(() => {
+    if (compareDatasets.length > 0) {
+      const validDatasets = compareDatasets.filter((ds) => ds.hasData !== false && ds.data && ds.data.length > 0);
+      if (validDatasets.length === 0) return {};
+
+      const allTimes = new Set<string>();
+      validDatasets.forEach((ds) => {
+        ds.data.forEach((d) => allTimes.add(d.time));
+      });
+      const sortedTimes = Array.from(allTimes).sort();
+
+      const series: any[] = validDatasets.map((ds) => ({
+        name: ds.stationName,
+        type: 'line',
+        data: ds.data.map((d) => [d.time, d.value]),
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 5,
+        lineStyle: {
+          color: ds.color,
+          width: 2,
+        },
+        itemStyle: {
+          color: ds.color,
+        },
+        yAxisIndex: 0,
+      }));
+
+      return {
+        tooltip: {
+          trigger: 'axis',
+          backgroundColor: mode === 'dark' ? '#2a2a2a' : '#fff',
+          borderColor: theme.colors.border,
+          textStyle: { color: theme.colors.text.primary, fontSize: 11 },
+        },
+        legend: {
+          show: false,
+        },
+        grid: {
+          left: '50px',
+          right: '20px',
+          top: '20px',
+          bottom: '40px',
+        },
+        xAxis: {
+          type: 'time',
+          axisLine: { lineStyle: { color: theme.colors.border } },
+          axisLabel: {
+            color: theme.colors.text.secondary,
+            fontSize: 10,
+            formatter: (value: any) => formatTime(value, 'HH:mm'),
+          },
+        },
+        yAxis: [
+          {
+            type: 'value',
+            position: 'left',
+            axisLine: { lineStyle: { color: theme.colors.border } },
+            axisLabel: { color: theme.colors.text.secondary, fontSize: 10 },
+            splitLine: { lineStyle: { color: theme.colors.border, type: 'dashed' } },
+          },
+        ],
+        series,
+      };
+    }
+
     if (dataWithThresholdFlag.length === 0) return {};
 
     const xAxisData = dataWithThresholdFlag.map((d) => formatTime(d.time, 'HH:mm'));

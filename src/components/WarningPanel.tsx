@@ -13,6 +13,7 @@ export interface WarningItem {
   stationId?: string;
   stationName?: string;
   time: string;
+  handleStatus?: 'unhandled' | 'handling' | 'handled';
   handled?: boolean;
   handler?: string;
   handleTime?: string;
@@ -29,7 +30,7 @@ export interface WarningPanelProps extends BaseComponentProps {
   showFilter?: boolean;
   maxHeight?: number;
   onWarningClick?: (warning: WarningItem) => void;
-  onHandle?: (warning: WarningItem) => void;
+  onHandle?: (warning: WarningItem, newStatus: 'handling' | 'handled') => void;
 }
 
 const levelLabels: Record<string, string> = {
@@ -56,19 +57,24 @@ export const WarningPanel: React.FC<WarningPanelProps> = ({
   const { theme } = useTheme();
   const { setSelectedStationId, highlightedWarningId, setHighlightedWarningId, focusStationByWarning, selectedStationId } = useLinkage();
   const [filterLevel, setFilterLevel] = useState<string>('all');
-  const [onlyUnhandled, setOnlyUnhandled] = useState(false);
+  const [filterHandleStatus, setFilterHandleStatus] = useState<'all' | 'unhandled' | 'handling' | 'handled'>('all');
 
   useEffect(() => {
     onReady?.();
   }, [onReady]);
 
+  const getEffectiveHandleStatus = (w: WarningItem): 'unhandled' | 'handling' | 'handled' => {
+    if (w.handleStatus) return w.handleStatus;
+    return w.handled ? 'handled' : 'unhandled';
+  };
+
   const filteredWarnings = useMemo(() => {
     return warnings.filter((w) => {
       if (filterLevel !== 'all' && w.level !== filterLevel) return false;
-      if (onlyUnhandled && w.handled) return false;
+      if (filterHandleStatus !== 'all' && getEffectiveHandleStatus(w) !== filterHandleStatus) return false;
       return true;
     });
-  }, [warnings, filterLevel, onlyUnhandled]);
+  }, [warnings, filterLevel, filterHandleStatus]);
 
   const warningCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -78,10 +84,14 @@ export const WarningPanel: React.FC<WarningPanelProps> = ({
       warning: 0,
       danger: 0,
       severe: 0,
-      unhandled: warnings.filter((w) => !w.handled).length,
+      unhandled: 0,
+      handling: 0,
+      handled: 0,
     };
     warnings.forEach((w) => {
       counts[w.level] = (counts[w.level] || 0) + 1;
+      const status = getEffectiveHandleStatus(w);
+      counts[status] = (counts[status] || 0) + 1;
     });
     return counts;
   }, [warnings]);
@@ -179,21 +189,26 @@ export const WarningPanel: React.FC<WarningPanelProps> = ({
               {showCount && ` (${warningCounts[level] || 0})`}
             </button>
           ))}
-          <button
-            onClick={() => setOnlyUnhandled(!onlyUnhandled)}
-            style={{
-              padding: '2px 10px',
-              border: `1px solid ${onlyUnhandled ? theme.colors.primary : theme.colors.border}`,
-              borderRadius: '12px',
-              backgroundColor: onlyUnhandled ? `${theme.colors.primary}15` : 'transparent',
-              color: onlyUnhandled ? theme.colors.primary : theme.colors.text.secondary,
-              cursor: 'pointer',
-              fontSize: '11px',
-              marginLeft: 'auto',
-            }}
-          >
-            仅显示未处理
-          </button>
+          <div style={{ flex: 1 }} />
+          {(['all', 'unhandled', 'handling', 'handled'] as const).map((status) => (
+            <button
+              key={status}
+              onClick={() => setFilterHandleStatus(status)}
+              style={{
+                padding: '2px 10px',
+                border: `1px solid ${filterHandleStatus === status ? theme.colors.primary : theme.colors.border}`,
+                borderRadius: '12px',
+                backgroundColor: filterHandleStatus === status ? `${theme.colors.primary}15` : 'transparent',
+                color: filterHandleStatus === status ? theme.colors.primary : theme.colors.text.secondary,
+                cursor: 'pointer',
+                fontSize: '11px',
+                transition: 'all 0.2s',
+              }}
+            >
+              {status === 'all' ? '全部' : status === 'unhandled' ? '未处理' : status === 'handling' ? '处理中' : '已处理'}
+              {showCount && ` (${warningCounts[status] || 0})`}
+            </button>
+          ))}
         </div>
       )}
 
@@ -202,6 +217,7 @@ export const WarningPanel: React.FC<WarningPanelProps> = ({
           <Empty text="暂无符合条件的预警" />
         ) : (
           filteredWarnings.map((warning) => {
+            const handleStatus = getEffectiveHandleStatus(warning);
             const isHighlighted =
               warning.id === highlightedWarningId ||
               (selectedStationId && warning.stationId === selectedStationId);
@@ -210,14 +226,14 @@ export const WarningPanel: React.FC<WarningPanelProps> = ({
                 key={warning.id}
                 className={classNames(
                   'water-sdk-warning-item',
-                  warning.handled && 'water-sdk-warning-item--handled'
+                  handleStatus === 'handled' && 'water-sdk-warning-item--handled'
                 )}
                 onClick={() => handleWarningClick(warning)}
                 style={{
                   padding: theme.spacing.md,
                   borderBottom: `1px solid ${theme.colors.border}`,
                   cursor: 'pointer',
-                  opacity: warning.handled ? 0.6 : 1,
+                  opacity: handleStatus === 'handled' ? 0.6 : 1,
                   transition: 'all 0.2s',
                   backgroundColor: isHighlighted
                     ? `${theme.colors.primary}20`
@@ -263,31 +279,75 @@ export const WarningPanel: React.FC<WarningPanelProps> = ({
                 </div>
               )}
 
-              {warning.handled ? (
+              {handleStatus === 'handled' ? (
                 <div style={{ fontSize: '11px', color: theme.colors.success, marginTop: '6px' }}>
                   ✓ 已处理 {warning.handler ? `by ${warning.handler}` : ''}
-                  {warning.handleTime && ` at ${formatTime(warning.handleTime, 'MM-DD HH:mm')}`}
+                  {warning.handleTime && ` · ${formatTime(warning.handleTime, 'MM-DD HH:mm')}`}
+                </div>
+              ) : handleStatus === 'handling' ? (
+                <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '11px', color: theme.colors.warning }}>
+                    🔄 处理中 {warning.handler ? `by ${warning.handler}` : ''}
+                    {warning.handleTime && ` · ${formatTime(warning.handleTime, 'MM-DD HH:mm')}`}
+                  </span>
+                  {onHandle && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onHandle(warning, 'handled');
+                      }}
+                      style={{
+                        padding: '2px 8px',
+                        border: 'none',
+                        borderRadius: '4px',
+                        backgroundColor: theme.colors.success,
+                        color: '#fff',
+                        fontSize: '10px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      标记完成
+                    </button>
+                  )}
                 </div>
               ) : (
                 onHandle && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onHandle(warning);
-                    }}
-                    style={{
-                      marginTop: '8px',
-                      padding: '4px 12px',
-                      border: 'none',
-                      borderRadius: '4px',
-                      backgroundColor: theme.colors.primary,
-                      color: '#fff',
-                      fontSize: '11px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    处理
-                  </button>
+                  <div style={{ marginTop: '8px', display: 'flex', gap: '6px' }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onHandle(warning, 'handling');
+                      }}
+                      style={{
+                        padding: '4px 10px',
+                        border: `1px solid ${theme.colors.border}`,
+                        borderRadius: '4px',
+                        backgroundColor: 'transparent',
+                        color: theme.colors.text.secondary,
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      开始处理
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onHandle(warning, 'handled');
+                      }}
+                      style={{
+                        padding: '4px 10px',
+                        border: 'none',
+                        borderRadius: '4px',
+                        backgroundColor: theme.colors.success,
+                        color: '#fff',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      直接完成
+                    </button>
+                  </div>
                 )
               )}
             </div>

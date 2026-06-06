@@ -263,7 +263,7 @@ const DemoContent: React.FC = () => {
             </div>
             {stationHydrograph || compareHydrographs.length > 0 ? (
               compareHydrographs.length > 0 ? (
-                <div style={{ height: '380px', padding: theme.spacing.md }}>
+                <div style={{ height: '380px', padding: theme.spacing.md, display: 'flex', flexDirection: 'column' }}>
                   <div style={{ marginBottom: theme.spacing.sm, display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     {compareHydrographs.map((item) => (
                       <div
@@ -274,8 +274,8 @@ const DemoContent: React.FC = () => {
                           gap: '4px',
                           fontSize: '11px',
                           padding: '2px 8px',
-                          backgroundColor: `${item.color}15`,
-                          border: `1px solid ${item.color}40`,
+                          backgroundColor: item.data ? `${item.color}15` : `${theme.colors.text.disabled}15`,
+                          border: `1px solid ${item.data ? `${item.color}40` : theme.colors.border}`,
                           borderRadius: '10px',
                           color: theme.colors.text.secondary,
                         }}
@@ -285,7 +285,7 @@ const DemoContent: React.FC = () => {
                             width: '8px',
                             height: '8px',
                             borderRadius: '50%',
-                            backgroundColor: item.color,
+                            backgroundColor: item.data ? item.color : theme.colors.text.disabled,
                           }}
                         />
                         {item.stationName}
@@ -299,9 +299,17 @@ const DemoContent: React.FC = () => {
                   </div>
                   <Hydrograph
                     title=""
-                    data={compareHydrographs[0]?.data?.data || []}
-                    mode={compareHydrographs[0]?.data?.mode || 'water'}
+                    data={[]}
+                    compareDatasets={compareHydrographs.filter((h) => h.data).map((h) => ({
+                      stationId: h.stationId,
+                      stationName: h.stationName,
+                      color: h.color,
+                      data: h.data.data,
+                    }))}
+                    mode="water"
                     height={320}
+                    showSwitcher={false}
+                    showThresholdToggle={false}
                   />
                 </div>
               ) : (

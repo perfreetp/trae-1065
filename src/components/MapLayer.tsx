@@ -354,7 +354,15 @@ export const MapLayer: React.FC<MapLayerProps> = ({
     );
   };
 
-  const hasContent = effectiveStations.length > 0 || adminBoundaries.length > 0;
+  const hasAnyFilterActive = useGlobalFilter ||
+    (propVisibleTypes && propVisibleTypes.length > 0) ||
+    legendItems.some((i) => !i.visible);
+
+  const hasContent = useMemo(() => {
+    if (effectiveStations.length > 0) return true;
+    if (adminBoundaries.length > 0 && !hasAnyFilterActive) return true;
+    return false;
+  }, [effectiveStations, adminBoundaries, hasAnyFilterActive]);
 
   if (!hasContent) {
     return (
