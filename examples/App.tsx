@@ -35,7 +35,7 @@ import {
 
 const DemoContent: React.FC = () => {
   const { theme, mode } = useTheme();
-  const { selectedStationId, setSelectedStationId, focusStationByWarning } = useLinkage();
+  const { selectedStationId, setSelectedStationId, focusStationByWarning, compareStationIds, clearCompareStations } = useLinkage();
   const { filteredStations, filters, setSelectedStationIds, selectedStationIds } = useDataFilter();
   const pageRef = useRef<HTMLDivElement>(null);
 
@@ -55,14 +55,44 @@ const DemoContent: React.FC = () => {
     return mockStationHydrographs[selectedStation.id] || null;
   }, [selectedStation]);
 
+  const compareHydrographs = useMemo(() => {
+    const result: {
+      stationId: string;
+      stationName: string;
+      color: string;
+      data: any;
+    }[] = [];
+    const colors = ['#1890ff', '#52c41a', '#faad14', '#f5222d', '#722ed1', '#13c2c2'];
+    compareStationIds.forEach((stationId, idx) => {
+      const station = mockStations.find((s) => s.id === stationId);
+      const hydrograph = mockStationHydrographs[stationId];
+      if (station) {
+        result.push({
+          stationId,
+          stationName: station.name,
+          color: colors[idx % colors.length],
+          data: hydrograph || null,
+        });
+      }
+    });
+    return result;
+  }, [compareStationIds]);
+
   const filteredWarnings = useMemo(() => {
-    if (filters.selectedStationIds.length > 0) {
-      return mockWarnings.filter(
-        (w) => w.stationId && filters.selectedStationIds.includes(w.stationId)
-      );
-    }
-    return mockWarnings;
-  }, [filters.selectedStationIds]);
+    return mockWarnings.filter((w) => {
+      if (filters.selectedStationIds.length > 0) {
+        if (!w.stationId || !filters.selectedStationIds.includes(w.stationId)) return false;
+      }
+      if (filters.selectedTypes.length > 0) {
+        const station = mockStations.find((s) => s.id === w.stationId);
+        if (!station || !filters.selectedTypes.includes(station.type)) return false;
+      }
+      if (filters.selectedStatuses.length > 0) {
+        if (!filters.selectedStatuses.includes(w.level)) return false;
+      }
+      return true;
+    });
+  }, [filters]);
 
   const filteredReportData = useMemo(() => {
     if (filters.selectedStationIds.length > 0) {
@@ -173,7 +203,7 @@ const DemoContent: React.FC = () => {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: theme.spacing.md }}>
             <StationCard
-              station={selectedStation || mockStations[0]}
+              station={selectedStation}
               showYoY={true}
               lastYearValue={24.8}
             />
@@ -194,29 +224,111 @@ const DemoContent: React.FC = () => {
             marginBottom: theme.spacing.lg,
           }}
         >
-          {stationHydrograph ? (
-            <Hydrograph
-              title={`${selectedStation?.name || '站点'} - 过程线`}
-              data={stationHydrograph.data}
-              dataYoY={stationHydrograph.dataYoY}
-              dataMoM={stationHydrograph.dataMoM}
-              showYoY={!!stationHydrograph.dataYoY}
-              showMoM={!!stationHydrograph.dataMoM}
-              showThresholdToggle={true}
-              mode={stationHydrograph.mode || 'dual'}
-              thresholdLines={stationHydrograph.thresholdLines}
-              yAxisName={stationHydrograph.yAxisName}
-              yAxisName2={stationHydrograph.yAxisName2}
-              height={380}
-            />
-          ) : (
-            <Hydrograph
-              title={`${selectedStation?.name || '站点'} - 过程线`}
-              data={[]}
-              mode="water"
-              height={380}
-            />
-          )}
+          <div
+            style={{
+              backgroundColor: theme.colors.surface,
+              borderRadius: theme.radius.md,
+              border: `1px solid ${theme.colors.border}`,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                padding: `${theme.spacing.sm} ${theme.spacing.md}`,
+                borderBottom: `1px solid ${theme.colors.border}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: theme.colors.text.primary }}>
+                {compareStationIds.length > 0 ? `多站点对比 (${compareStationIds.length}个站点)` : `${selectedStation?.name || '站点'} - 过程线`}
+              </h4>
+              {compareStationIds.length > 0 && (
+                <button
+                  onClick={clearCompareStations}
+                  style={{
+                    padding: '2px 10px',
+                    border: `1px solid ${theme.colors.border}`,
+                    borderRadius: '10px',
+                    backgroundColor: 'transparent',
+                    color: theme.colors.text.secondary,
+                    cursor: 'pointer',
+                    fontSize: '11px',
+                  }}
+                >
+                  清空对比
+                </button>
+              )}
+            </div>
+            {stationHydrograph || compareHydrographs.length > 0 ? (
+              compareHydrographs.length > 0 ? (
+                <div style={{ height: '380px', padding: theme.spacing.md }}>
+                  <div style={{ marginBottom: theme.spacing.sm, display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {compareHydrographs.map((item) => (
+                      <div
+                        key={item.stationId}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          backgroundColor: `${item.color}15`,
+                          border: `1px solid ${item.color}40`,
+                          borderRadius: '10px',
+                          color: theme.colors.text.secondary,
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            backgroundColor: item.color,
+                          }}
+                        />
+                        {item.stationName}
+                        {!item.data && (
+                          <span style={{ color: theme.colors.text.disabled, fontSize: '10px' }}>
+                            (无数据)
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <Hydrograph
+                    title=""
+                    data={compareHydrographs[0]?.data?.data || []}
+                    mode={compareHydrographs[0]?.data?.mode || 'water'}
+                    height={320}
+                  />
+                </div>
+              ) : (
+                <Hydrograph
+                  title=""
+                  data={stationHydrograph.data}
+                  dataYoY={stationHydrograph.dataYoY}
+                  dataMoM={stationHydrograph.dataMoM}
+                  showYoY={!!stationHydrograph.dataYoY}
+                  showMoM={!!stationHydrograph.dataMoM}
+                  showThresholdToggle={true}
+                  mode={stationHydrograph.mode || 'dual'}
+                  thresholdLines={stationHydrograph.thresholdLines}
+                  yAxisName={stationHydrograph.yAxisName}
+                  yAxisName2={stationHydrograph.yAxisName2}
+                  height={380}
+                />
+              )
+            ) : (
+              <div style={{ height: '380px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ textAlign: 'center', color: theme.colors.text.secondary, fontSize: '13px' }}>
+                  <div style={{ fontSize: '32px', marginBottom: '8px' }}>📈</div>
+                  {selectedStation ? '该站点暂无过程线数据' : '请选择站点查看过程线'}
+                </div>
+              </div>
+            )}
+          </div>
           <WarningPanel
             warnings={filteredWarnings}
             maxHeight={380}
@@ -263,7 +375,8 @@ const DemoContent: React.FC = () => {
             filterOptions={{
               typeField: 'type',
               statusField: 'status',
-              timeField: 'time',
+              timeField: 'updateTime',
+              stationIdField: 'stationId',
             }}
             onRowClick={(record) => console.log('Row clicked:', record)}
           />

@@ -34,6 +34,7 @@ export const StationCard: React.FC<StationCardProps> = ({
   showYoY = false,
   lastYearValue,
   showDetails = true,
+  showCompare = true,
   extraFields = [],
   className,
   style,
@@ -41,7 +42,7 @@ export const StationCard: React.FC<StationCardProps> = ({
   onReady,
 }) => {
   const { theme } = useTheme();
-  const { selectedStationId, setSelectedStationId } = useLinkage();
+  const { selectedStationId, setSelectedStationId, compareStationIds, toggleCompareStation } = useLinkage();
 
   useEffect(() => {
     onReady?.();
@@ -587,6 +588,29 @@ export const StationCard: React.FC<StationCardProps> = ({
               </span>
             </div>
           )}
+        </div>
+      )}
+
+      {showCompare && (
+        <div style={{ borderTop: `1px solid ${theme.colors.border}`, paddingTop: theme.spacing.sm, marginTop: theme.spacing.sm }}>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleCompareStation(station.id);
+            }}
+            style={{
+              width: '100%',
+              padding: '6px 12px',
+              border: `1px solid ${compareStationIds.includes(station.id) ? theme.colors.primary : theme.colors.border}`,
+              borderRadius: theme.radius.sm,
+              backgroundColor: compareStationIds.includes(station.id) ? `${theme.colors.primary}10` : 'transparent',
+              color: compareStationIds.includes(station.id) ? theme.colors.primary : theme.colors.text.secondary,
+              cursor: 'pointer',
+              fontSize: '12px',
+            }}
+          >
+            {compareStationIds.includes(station.id) ? '✓ 已加入对比' : '＋ 加入对比'}
+          </button>
         </div>
       )}
     </div>

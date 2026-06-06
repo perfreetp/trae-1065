@@ -23,10 +23,12 @@ export interface ReportColumn {
 export interface ReportFilter {
   types?: StationType[];
   statuses?: WarningLevel[];
-  timeRange?: { start: string; end: string };
+  timeRange?: { start?: string; end?: string };
   timeField?: string;
   typeField?: string;
   statusField?: string;
+  stationIds?: string[];
+  stationIdField?: string;
 }
 
 export interface ReportTableProps extends BaseComponentProps {
@@ -38,10 +40,12 @@ export interface ReportTableProps extends BaseComponentProps {
   pageSize?: number;
   showExport?: boolean;
   showFilter?: boolean;
+  showSummary?: boolean;
   filterOptions?: ReportFilter;
   exportOptions?: ExportOptions;
   rowKey?: string;
   useGlobalFilter?: boolean;
+  summaryFields?: { valueField: string; typeField?: string; statusField?: string }[];
   onRowClick?: (record: any, index: number) => void;
   onSort?: (field: string, order: 'asc' | 'desc' | null) => void;
   onFilter?: (filter: ReportFilter) => void;
@@ -56,10 +60,12 @@ export const ReportTable: React.FC<ReportTableProps> = ({
   pageSize = 10,
   showExport = true,
   showFilter = true,
+  showSummary = true,
   filterOptions = {},
   exportOptions,
   rowKey = 'id',
   useGlobalFilter = false,
+  summaryFields = [],
   onRowClick,
   onSort,
   onFilter,
@@ -77,6 +83,8 @@ export const ReportTable: React.FC<ReportTableProps> = ({
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
   const [localFilter, setLocalFilter] = useState<ReportFilter>(filterOptions);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [exportMode, setExportMode] = useState<'detail' | 'summary' | 'both'>('detail');
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   useEffect(() => {
     onReady?.();
@@ -88,6 +96,7 @@ export const ReportTable: React.FC<ReportTableProps> = ({
         types: globalFilters.selectedTypes.length > 0 ? globalFilters.selectedTypes : undefined,
         statuses: globalFilters.selectedStatuses.length > 0 ? globalFilters.selectedStatuses : undefined,
         timeRange: globalFilters.timeRange,
+        stationIds: globalFilters.selectedStationIds.length > 0 ? globalFilters.selectedStationIds : undefined,
         ...localFilter,
       };
     }
@@ -96,6 +105,9 @@ export const ReportTable: React.FC<ReportTableProps> = ({
 
   const filteredData = useMemo(() => {
     return dataSource.filter((record) => {
+      if (activeFilter.stationIds && activeFilter.stationIds.length > 0 && activeFilter.stationIdField) {
+        if (!activeFilter.stationIds.includes(record[activeFilter.stationIdField])) return false;
+      }
       if (activeFilter.types && activeFilter.types.length > 0 && activeFilter.typeField) {
         if (!activeFilter.types.includes(record[activeFilter.typeField])) return false;
       }
@@ -146,6 +158,85 @@ export const ReportTable: React.FC<ReportTableProps> = ({
 
   const totalPages = Math.ceil(sortedData.length / pageSize);
 
+  const summaryByType = useMemo(() => {
+    const typeField = filterOptions.typeField || 'type';
+    const statusField = filterOptions.statusField || 'status';
+    const result: Record<string, {
+      count: number;
+      valueRange: { min: number; max: number } | null;
+      abnormalCount: number;
+      typeName: string;
+    }> = {};
+
+    const typeNames: Record<string, string> = {
+      rain: '雨量站',
+      water: '水位站',
+      reservoir: '水库',
+      gate: '闸门',
+      pump: '泵站',
+      risk: '风险点',
+    };
+
+    filteredData.forEach((record) => {
+      const type = record[typeField] || 'unknown';
+      const status = record[statusField];
+      const value = summaryFields.length > 0 ? record[summaryFields[0].valueField] : null;
+
+      if (!result[type]) {
+        result[type] = {
+          count: 0,
+          valueRange: null,
+          abnormalCount: 0,
+          typeName: typeNames[type] || type,
+        };
+      }
+
+      result[type].count++;
+
+      if (typeof value === 'number') {
+        if (result[type].valueRange === null) {
+          result[type].valueRange = { min: value, max: value };
+        } else {
+          result[type].valueRange.min = Math.min(result[type].valueRange.min, value);
+          result[type].valueRange.max = Math.max(result[type].valueRange.max, value);
+        }
+      }
+
+      if (status === 'warning' || status === 'danger' || status === '预警' || status === '危险') {
+        result[type].abnormalCount++;
+      }
+    });
+
+    return result;
+  }, [filteredData, filterOptions, summaryFields]);
+
+  const summaryByStatus = useMemo(() => {
+    const statusField = filterOptions.statusField || 'status';
+    const result: Record<string, number> = {
+      normal: 0,
+      attention: 0,
+      warning: 0,
+      danger: 0,
+    };
+
+    const statusMap: Record<string, string> = {
+      正常: 'normal',
+      注意: 'attention',
+      预警: 'warning',
+      危险: 'danger',
+    };
+
+    filteredData.forEach((record) => {
+      const status = record[statusField];
+      const mappedStatus = statusMap[status] || status || 'normal';
+      if (result[mappedStatus] !== undefined) {
+        result[mappedStatus]++;
+      }
+    });
+
+    return result;
+  }, [filteredData, filterOptions]);
+
   const handleSort = (column: ReportColumn) => {
     if (column.sorter === undefined && column.type === undefined) return;
 
@@ -162,23 +253,50 @@ export const ReportTable: React.FC<ReportTableProps> = ({
 
   const exportToCSV = () => {
     const exportableColumns = columns.filter((c) => c.exportable !== false);
-    const headers = exportableColumns.map((c) => c.title).join(',');
-    const rows = sortedData.map((record) =>
-      exportableColumns
-        .map((col) => {
-          const value = record[col.dataIndex];
-          if (value === null || value === undefined) return '';
-          const strValue = String(value).replace(/"/g, '""');
-          return `"${strValue}"`;
-        })
-        .join(',')
-    );
-    const csv = [headers, ...rows].join('\n');
+    let csvParts: string[] = [];
+
+    if (exportMode === 'summary' || exportMode === 'both') {
+      csvParts.push('=== 汇总统计 ===');
+      csvParts.push('按类型统计:');
+      csvParts.push('类型,数量,异常数,最小值,最大值');
+      Object.entries(summaryByType).forEach(([type, data]) => {
+        const minVal = data.valueRange ? data.valueRange.min : '-';
+        const maxVal = data.valueRange ? data.valueRange.max : '-';
+        csvParts.push(`${data.typeName},${data.count},${data.abnormalCount},${minVal},${maxVal}`);
+      });
+      csvParts.push('');
+      csvParts.push('按状态统计:');
+      csvParts.push('状态,数量');
+      csvParts.push(`正常,${summaryByStatus.normal}`);
+      csvParts.push(`注意,${summaryByStatus.attention}`);
+      csvParts.push(`预警,${summaryByStatus.warning}`);
+      csvParts.push(`危险,${summaryByStatus.danger}`);
+      if (exportMode === 'both') csvParts.push('');
+    }
+
+    if (exportMode === 'detail' || exportMode === 'both') {
+      if (exportMode === 'both') csvParts.push('=== 明细数据 ===');
+      const headers = exportableColumns.map((c) => c.title).join(',');
+      const rows = sortedData.map((record) =>
+        exportableColumns
+          .map((col) => {
+            const value = record[col.dataIndex];
+            if (value === null || value === undefined) return '';
+            const strValue = String(value).replace(/"/g, '""');
+            return `"${strValue}"`;
+          })
+          .join(',')
+      );
+      csvParts.push(headers, ...rows);
+    }
+
+    const csv = csvParts.join('\n');
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = `${title || '报表'}_${formatTime(new Date().toISOString(), 'YYYY-MM-DD')}.csv`;
     link.click();
+    setShowExportMenu(false);
   };
 
   const handleExportScreenshot = async () => {
@@ -308,20 +426,62 @@ export const ReportTable: React.FC<ReportTableProps> = ({
           )}
           {showExport && (
             <>
-              <button
-                onClick={exportToCSV}
-                style={{
-                  padding: '4px 12px',
-                  border: `1px solid ${theme.colors.border}`,
-                  borderRadius: theme.radius.sm,
-                  backgroundColor: 'transparent',
-                  color: theme.colors.text.primary,
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                }}
-              >
-                📄 导出CSV
-              </button>
+              <div style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setShowExportMenu(!showExportMenu)}
+                  style={{
+                    padding: '4px 12px',
+                    border: `1px solid ${theme.colors.border}`,
+                    borderRadius: theme.radius.sm,
+                    backgroundColor: 'transparent',
+                    color: theme.colors.text.primary,
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                  }}
+                >
+                  📄 导出CSV ▾
+                </button>
+                {showExportMenu && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      right: 0,
+                      marginTop: '4px',
+                      backgroundColor: theme.colors.surface,
+                      border: `1px solid ${theme.colors.border}`,
+                      borderRadius: theme.radius.sm,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                      zIndex: 100,
+                      minWidth: '140px',
+                    }}
+                  >
+                    {[
+                      { key: 'detail', label: '仅导出明细' },
+                      { key: 'summary', label: '仅导出汇总' },
+                      { key: 'both', label: '明细+汇总' },
+                    ].map((item) => (
+                      <div
+                        key={item.key}
+                        onClick={() => {
+                          setExportMode(item.key as 'detail' | 'summary' | 'both');
+                          exportToCSV();
+                        }}
+                        style={{
+                          padding: '8px 12px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          color: exportMode === item.key ? theme.colors.primary : theme.colors.text.primary,
+                          backgroundColor: exportMode === item.key ? `${theme.colors.primary}10` : 'transparent',
+                          borderBottom: `1px solid ${theme.colors.border}`,
+                        }}
+                      >
+                        {exportMode === item.key ? '✓ ' : ''} {item.label}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button
                 onClick={handleExportScreenshot}
                 style={{
@@ -538,6 +698,86 @@ export const ReportTable: React.FC<ReportTableProps> = ({
               重置筛选
             </button>
           )}
+        </div>
+      )}
+
+      {showSummary && filteredData.length > 0 && (
+        <div
+          style={{
+            padding: theme.spacing.md,
+            borderBottom: `1px solid ${theme.colors.border}`,
+            backgroundColor: mode === 'dark' ? '#1f1f1f' : '#f5f5f5',
+          }}
+        >
+          <div style={{ fontSize: '12px', fontWeight: 600, color: theme.colors.text.primary, marginBottom: theme.spacing.sm }}>
+            📊 汇总分析
+          </div>
+          <div style={{ display: 'flex', gap: theme.spacing.md, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: '300px' }}>
+              <div style={{ fontSize: '11px', color: theme.colors.text.secondary, marginBottom: '6px' }}>按类型统计</div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {Object.entries(summaryByType).map(([type, data]) => (
+                  <div
+                    key={type}
+                    style={{
+                      padding: '6px 10px',
+                      backgroundColor: theme.colors.surface,
+                      border: `1px solid ${theme.colors.border}`,
+                      borderRadius: theme.radius.sm,
+                      minWidth: '120px',
+                    }}
+                  >
+                    <div style={{ fontSize: '11px', color: theme.colors.text.secondary, marginBottom: '2px' }}>
+                      {data.typeName}
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: theme.colors.text.primary }}>
+                      {data.count} 个
+                      {data.abnormalCount > 0 && (
+                        <span style={{ fontSize: '11px', color: theme.colors.danger, marginLeft: '6px' }}>
+                          异常 {data.abnormalCount}
+                        </span>
+                      )}
+                    </div>
+                    {data.valueRange && (
+                      <div style={{ fontSize: '10px', color: theme.colors.text.secondary, marginTop: '2px' }}>
+                        值范围: {data.valueRange.min.toFixed(1)} ~ {data.valueRange.max.toFixed(1)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ flex: 0, minWidth: '200px' }}>
+              <div style={{ fontSize: '11px', color: theme.colors.text.secondary, marginBottom: '6px' }}>按状态统计</div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {[
+                  { key: 'normal', label: '正常', color: theme.colors.success },
+                  { key: 'attention', label: '注意', color: theme.colors.warning },
+                  { key: 'warning', label: '预警', color: '#faad14' },
+                  { key: 'danger', label: '危险', color: theme.colors.danger },
+                ].map((item) => (
+                  <div
+                    key={item.key}
+                    style={{
+                      padding: '6px 10px',
+                      backgroundColor: theme.colors.surface,
+                      border: `1px solid ${theme.colors.border}`,
+                      borderRadius: theme.radius.sm,
+                      textAlign: 'center',
+                      flex: 1,
+                    }}
+                  >
+                    <div style={{ fontSize: '11px', color: item.color, marginBottom: '2px' }}>
+                      {item.label}
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: theme.colors.text.primary }}>
+                      {summaryByStatus[item.key]}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
