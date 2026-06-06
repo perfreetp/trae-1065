@@ -62,259 +62,392 @@ export const StationCard: React.FC<StationCardProps> = ({
     }
   };
 
-  const renderReservoirContent = (extra: ReservoirExtra) => (
+  const renderReservoirContent = (extra: ReservoirExtra) => {
+    const currentLevel = extra.currentLevel ?? extra.waterLevel;
+    const currentStorage = extra.currentStorage ?? extra.storage;
+    const storageRate = extra.storageRate ?? extra.storagePercent;
+    const floodLimitLevel = extra.floodLimitLevel;
+    const normalLevel = extra.normalLevel;
+    const inflow = extra.inflow;
+    const outflow = extra.outflow;
+    const totalCapacity = extra.totalCapacity;
+
+    return (
     <>
-      {extra.waterLevel !== undefined && (
+      {currentLevel !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>当前水位</span>
           <span style={{ color: theme.colors.text.primary, fontWeight: 500 }}>
-            {formatNumber(extra.waterLevel)} m
+            {formatNumber(currentLevel)} m
           </span>
         </div>
       )}
-      {extra.storage !== undefined && (
+      {currentStorage !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>当前库容</span>
           <span style={{ color: theme.colors.text.primary }}>
-            {formatNumber(extra.storage)} 万m³
+            {formatNumber(currentStorage)} 万m³
           </span>
         </div>
       )}
-      {extra.storagePercent !== undefined && (
+      {storageRate !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>蓄水率</span>
-          <span style={{ color: extra.storagePercent > 80 ? theme.colors.warning : theme.colors.success }}>
-            {formatNumber(extra.storagePercent, 1)} %
+          <span style={{ color: storageRate > 80 ? theme.colors.warning : theme.colors.success }}>
+            {formatNumber(storageRate, 1)} %
           </span>
         </div>
       )}
-      {extra.floodLimitLevel !== undefined && (
+      {floodLimitLevel !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>汛限水位</span>
           <span style={{ color: theme.colors.text.secondary }}>
-            {formatNumber(extra.floodLimitLevel)} m
+            {formatNumber(floodLimitLevel)} m
           </span>
         </div>
       )}
-      {extra.normalLevel !== undefined && (
+      {normalLevel !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>正常蓄水位</span>
           <span style={{ color: theme.colors.text.secondary }}>
-            {formatNumber(extra.normalLevel)} m
+            {formatNumber(normalLevel)} m
           </span>
         </div>
       )}
-      {extra.inflow !== undefined && (
+      {totalCapacity !== undefined && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+          <span style={{ color: theme.colors.text.secondary }}>总库容</span>
+          <span style={{ color: theme.colors.text.secondary }}>
+            {formatNumber(totalCapacity)} 万m³
+          </span>
+        </div>
+      )}
+      {inflow !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>入库流量</span>
           <span style={{ color: theme.colors.text.primary }}>
-            {formatNumber(extra.inflow)} m³/s
+            {formatNumber(inflow)} m³/s
           </span>
         </div>
       )}
-      {extra.outflow !== undefined && (
+      {outflow !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
           <span style={{ color: theme.colors.text.secondary }}>出库流量</span>
           <span style={{ color: theme.colors.text.primary }}>
-            {formatNumber(extra.outflow)} m³/s
+            {formatNumber(outflow)} m³/s
           </span>
         </div>
       )}
     </>
   );
+  };
 
-  const renderGateContent = (extra: GateExtra) => (
+  const renderGateContent = (extra: GateExtra) => {
+    const openHeight = extra.openHeight ?? extra.opening;
+    const openPercent = extra.openPercent ?? extra.openingPercent;
+    const totalHoles = extra.totalHoles ?? extra.gateCount;
+    const openHoles = extra.openHoles ?? extra.openCount;
+    const dischargeFlow = extra.dischargeFlow ?? extra.discharge;
+    const operationStatus = extra.operationStatus ?? extra.status;
+
+    const statusLabel =
+      operationStatus === 'open' || operationStatus === '全开'
+        ? '全开'
+        : operationStatus === 'closed' || operationStatus === '全关'
+        ? '全关'
+        : operationStatus === 'partial' || operationStatus === '部分开启'
+        ? '部分开启'
+        : operationStatus;
+
+    return (
     <>
-      {extra.opening !== undefined && (
+      {openHeight !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>开启高度</span>
           <span style={{ color: theme.colors.text.primary, fontWeight: 500 }}>
-            {formatNumber(extra.opening)} m
+            {formatNumber(openHeight)} m
           </span>
         </div>
       )}
-      {extra.openingPercent !== undefined && (
+      {openPercent !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>开度</span>
-          <span style={{ color: extra.openingPercent > 50 ? theme.colors.success : theme.colors.warning }}>
-            {formatNumber(extra.openingPercent, 1)} %
+          <span style={{ color: openPercent > 50 ? theme.colors.success : theme.colors.warning }}>
+            {formatNumber(openPercent, 1)} %
           </span>
         </div>
       )}
-      {extra.gateCount !== undefined && extra.openCount !== undefined && (
+      {totalHoles !== undefined && openHoles !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>闸门状态</span>
           <span style={{ color: theme.colors.text.primary }}>
-            {extra.openCount}/{extra.gateCount} 孔开启
+            {openHoles}/{totalHoles} 孔开启
           </span>
         </div>
       )}
-      {extra.discharge !== undefined && (
+      {dischargeFlow !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>泄流流量</span>
           <span style={{ color: theme.colors.text.primary }}>
-            {formatNumber(extra.discharge)} m³/s
+            {formatNumber(dischargeFlow)} m³/s
           </span>
         </div>
       )}
-      {extra.status && (
+      {operationStatus && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
           <span style={{ color: theme.colors.text.secondary }}>运行状态</span>
           <span
             style={{
-              color: extra.status === 'open' ? theme.colors.success : extra.status === 'closed' ? theme.colors.text.secondary : theme.colors.warning,
+              color:
+                operationStatus === 'open' || operationStatus === '全开'
+                  ? theme.colors.success
+                  : operationStatus === 'closed' || operationStatus === '全关'
+                  ? theme.colors.text.secondary
+                  : theme.colors.warning,
             }}
           >
-            {extra.status === 'open' ? '全开' : extra.status === 'closed' ? '全关' : '部分开启'}
+            {statusLabel}
           </span>
         </div>
       )}
     </>
   );
+  };
 
-  const renderPumpContent = (extra: PumpExtra) => (
+  const renderPumpContent = (extra: PumpExtra) => {
+    const runningPumps = extra.runningPumps ?? extra.runningCount;
+    const totalPumps = extra.totalPumps ?? extra.totalCount;
+    const totalFlow = extra.totalFlow ?? extra.flowRate;
+    const totalPower = extra.totalPower ?? extra.power;
+    const operationStatus = extra.operationStatus ?? extra.status;
+
+    const statusLabel =
+      operationStatus === 'running' || operationStatus === '运行中'
+        ? '运行中'
+        : operationStatus === 'stopped' || operationStatus === '已停机'
+        ? '已停机'
+        : operationStatus === 'partial' || operationStatus === '部分运行'
+        ? '部分运行'
+        : operationStatus;
+
+    return (
     <>
-      {extra.runningCount !== undefined && extra.totalCount !== undefined && (
+      {runningPumps !== undefined && totalPumps !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>运行台数</span>
           <span style={{ color: theme.colors.text.primary, fontWeight: 500 }}>
-            {extra.runningCount}/{extra.totalCount} 台
+            {runningPumps}/{totalPumps} 台
           </span>
         </div>
       )}
-      {extra.flowRate !== undefined && (
+      {totalFlow !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>总流量</span>
           <span style={{ color: theme.colors.text.primary }}>
-            {formatNumber(extra.flowRate)} m³/h
+            {formatNumber(totalFlow)} m³/h
           </span>
         </div>
       )}
-      {extra.power !== undefined && (
+      {totalPower !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>总功率</span>
           <span style={{ color: theme.colors.text.primary }}>
-            {formatNumber(extra.power)} kW
+            {formatNumber(totalPower)} kW
           </span>
         </div>
       )}
-      {extra.status && (
+      {operationStatus && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
           <span style={{ color: theme.colors.text.secondary }}>运行状态</span>
           <span
             style={{
-              color: extra.status === 'running' ? theme.colors.success : extra.status === 'stopped' ? theme.colors.text.secondary : theme.colors.warning,
+              color:
+                operationStatus === 'running' || operationStatus === '运行中'
+                  ? theme.colors.success
+                  : operationStatus === 'stopped' || operationStatus === '已停机'
+                  ? theme.colors.text.secondary
+                  : theme.colors.warning,
             }}
           >
-            {extra.status === 'running' ? '运行中' : extra.status === 'stopped' ? '已停机' : '部分运行'}
+            {statusLabel}
           </span>
         </div>
       )}
     </>
   );
+  };
 
-  const renderRainContent = (extra: RainExtra) => (
+  const renderRainContent = (extra: RainExtra) => {
+    const rain1h = extra.rain1h ?? extra.rainfall1h;
+    const rain6h = extra.rain6h ?? extra.rainfall6h;
+    const rain12h = extra.rain12h ?? extra.rainfall12h;
+    const rain24h = extra.rain24h ?? extra.rainfall24h;
+    const rainTotal = extra.rainTotal ?? extra.rainfallTotal;
+
+    return (
     <>
-      {extra.rainfall1h !== undefined && (
+      {rain1h !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>1小时降雨</span>
           <span style={{ color: theme.colors.text.primary }}>
-            {formatNumber(extra.rainfall1h)} mm
+            {formatNumber(rain1h)} mm
           </span>
         </div>
       )}
-      {extra.rainfall6h !== undefined && (
+      {rain6h !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>6小时降雨</span>
           <span style={{ color: theme.colors.text.primary }}>
-            {formatNumber(extra.rainfall6h)} mm
+            {formatNumber(rain6h)} mm
           </span>
         </div>
       )}
-      {extra.rainfall24h !== undefined && (
+      {rain12h !== undefined && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+          <span style={{ color: theme.colors.text.secondary }}>12小时降雨</span>
+          <span style={{ color: theme.colors.text.primary }}>
+            {formatNumber(rain12h)} mm
+          </span>
+        </div>
+      )}
+      {rain24h !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>24小时降雨</span>
           <span style={{ color: theme.colors.primary, fontWeight: 500 }}>
-            {formatNumber(extra.rainfall24h)} mm
+            {formatNumber(rain24h)} mm
           </span>
         </div>
       )}
-      {extra.rainfallTotal !== undefined && (
+      {rainTotal !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
           <span style={{ color: theme.colors.text.secondary }}>累计降雨</span>
           <span style={{ color: theme.colors.text.primary }}>
-            {formatNumber(extra.rainfallTotal)} mm
+            {formatNumber(rainTotal)} mm
           </span>
         </div>
       )}
     </>
   );
+  };
 
-  const renderWaterContent = (extra: WaterExtra) => (
+  const renderWaterContent = (extra: WaterExtra) => {
+    const currentLevel = extra.currentLevel ?? extra.waterLevel;
+    const currentFlow = extra.currentFlow ?? extra.flowRate;
+    const currentVelocity = extra.currentVelocity ?? extra.velocity;
+    const waterTemp = extra.waterTemp ?? extra.waterTemperature;
+    const warningLevel = extra.warningLevel;
+    const guaranteeLevel = extra.guaranteeLevel;
+
+    return (
     <>
-      {extra.waterLevel !== undefined && (
+      {currentLevel !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
-          <span style={{ color: theme.colors.text.secondary }}>水位</span>
+          <span style={{ color: theme.colors.text.secondary }}>当前水位</span>
           <span style={{ color: theme.colors.text.primary, fontWeight: 500 }}>
-            {formatNumber(extra.waterLevel)} m
+            {formatNumber(currentLevel)} m
           </span>
         </div>
       )}
-      {extra.flowRate !== undefined && (
+      {currentFlow !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>流量</span>
           <span style={{ color: theme.colors.text.primary }}>
-            {formatNumber(extra.flowRate)} m³/s
+            {formatNumber(currentFlow)} m³/s
           </span>
         </div>
       )}
-      {extra.velocity !== undefined && (
+      {currentVelocity !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>流速</span>
           <span style={{ color: theme.colors.text.primary }}>
-            {formatNumber(extra.velocity)} m/s
+            {formatNumber(currentVelocity)} m/s
           </span>
         </div>
       )}
-      {extra.waterTemperature !== undefined && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+      {waterTemp !== undefined && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>水温</span>
           <span style={{ color: theme.colors.text.primary }}>
-            {formatNumber(extra.waterTemperature)} °C
+            {formatNumber(waterTemp)} °C
+          </span>
+        </div>
+      )}
+      {warningLevel !== undefined && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+          <span style={{ color: theme.colors.text.secondary }}>警戒水位</span>
+          <span style={{ color: theme.colors.warning }}>
+            {formatNumber(warningLevel)} m
+          </span>
+        </div>
+      )}
+      {guaranteeLevel !== undefined && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+          <span style={{ color: theme.colors.text.secondary }}>保证水位</span>
+          <span style={{ color: theme.colors.danger }}>
+            {formatNumber(guaranteeLevel)} m
           </span>
         </div>
       )}
     </>
   );
+  };
 
-  const renderRiskContent = (extra: RiskExtra) => (
+  const renderRiskContent = (extra: RiskExtra) => {
+    const affectedPopulation = extra.affectedPopulation ?? extra.affectedPeople;
+    const displacement = extra.displacement;
+    const displacementRate = extra.displacementRate;
+    const riskType = extra.riskType;
+    const riskLevel = extra.riskLevel;
+    const monitoringPoints = extra.monitoringPoints;
+    const affectedArea = extra.affectedArea;
+
+    return (
     <>
-      {extra.riskType && (
+      {riskType && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>风险类型</span>
-          <span style={{ color: theme.colors.text.primary }}>{extra.riskType}</span>
+          <span style={{ color: theme.colors.text.primary }}>{riskType}</span>
         </div>
       )}
-      {extra.riskLevel && (
+      {riskLevel && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>风险等级</span>
-          <span style={{ color: theme.colors.danger, fontWeight: 500 }}>{extra.riskLevel}</span>
+          <span style={{ color: theme.colors.danger, fontWeight: 500 }}>{riskLevel}</span>
         </div>
       )}
-      {extra.affectedPeople !== undefined && (
+      {affectedPopulation !== undefined && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>影响人口</span>
-          <span style={{ color: theme.colors.text.primary }}>{extra.affectedPeople} 人</span>
+          <span style={{ color: theme.colors.text.primary }}>{affectedPopulation} 人</span>
         </div>
       )}
-      {extra.displacement !== undefined && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+      {affectedArea !== undefined && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+          <span style={{ color: theme.colors.text.secondary }}>影响面积</span>
+          <span style={{ color: theme.colors.text.primary }}>{affectedArea} km²</span>
+        </div>
+      )}
+      {displacement !== undefined && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
           <span style={{ color: theme.colors.text.secondary }}>位移量</span>
-          <span style={{ color: theme.colors.warning }}>{formatNumber(extra.displacement)} mm</span>
+          <span style={{ color: theme.colors.warning }}>{formatNumber(displacement)} mm</span>
+        </div>
+      )}
+      {displacementRate !== undefined && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+          <span style={{ color: theme.colors.text.secondary }}>位移速率</span>
+          <span style={{ color: theme.colors.warning }}>{formatNumber(displacementRate)} mm/h</span>
+        </div>
+      )}
+      {monitoringPoints !== undefined && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+          <span style={{ color: theme.colors.text.secondary }}>监测点数量</span>
+          <span style={{ color: theme.colors.text.primary }}>{monitoringPoints} 个</span>
         </div>
       )}
     </>
   );
+  };
 
   const renderTypedContent = () => {
     if (!station?.extra) return null;

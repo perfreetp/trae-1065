@@ -104,9 +104,14 @@ export const ReportTable: React.FC<ReportTableProps> = ({
       }
       if (activeFilter.timeRange && activeFilter.timeField) {
         const time = new Date(record[activeFilter.timeField]).getTime();
-        const start = new Date(activeFilter.timeRange.start).getTime();
-        const end = new Date(activeFilter.timeRange.end).getTime();
-        if (time < start || time > end) return false;
+        if (activeFilter.timeRange.start) {
+          const start = new Date(activeFilter.timeRange.start).getTime();
+          if (time < start) return false;
+        }
+        if (activeFilter.timeRange.end) {
+          const end = new Date(activeFilter.timeRange.end).getTime();
+          if (time > end) return false;
+        }
       }
       return true;
     });
@@ -443,7 +448,76 @@ export const ReportTable: React.FC<ReportTableProps> = ({
             </div>
           )}
 
-          {(localFilter.types?.length || localFilter.statuses?.length) && (
+          {filterOptions.timeField && (
+            <div style={{ flex: 2, minWidth: '300px' }}>
+              <div style={{ fontSize: '12px', color: theme.colors.text.secondary, marginBottom: '6px' }}>
+                时间范围
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <input
+                  type="datetime-local"
+                  value={
+                    localFilter.timeRange?.start
+                      ? localFilter.timeRange.start.slice(0, 16)
+                      : ''
+                  }
+                  onChange={(e) => {
+                    const next = {
+                      ...localFilter.timeRange,
+                      start: e.target.value ? new Date(e.target.value).toISOString() : undefined,
+                    } as { start?: string; end?: string };
+                    if (!next.start && !next.end) {
+                      handleFilterChange('timeRange', undefined);
+                    } else {
+                      handleFilterChange('timeRange', next);
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    minWidth: '140px',
+                    padding: '4px 8px',
+                    border: `1px solid ${theme.colors.border}`,
+                    borderRadius: theme.radius.sm,
+                    backgroundColor: theme.colors.surface,
+                    color: theme.colors.text.primary,
+                    fontSize: '12px',
+                  }}
+                />
+                <span style={{ color: theme.colors.text.secondary, fontSize: '12px' }}>至</span>
+                <input
+                  type="datetime-local"
+                  value={
+                    localFilter.timeRange?.end
+                      ? localFilter.timeRange.end.slice(0, 16)
+                      : ''
+                  }
+                  onChange={(e) => {
+                    const next = {
+                      ...localFilter.timeRange,
+                      end: e.target.value ? new Date(e.target.value).toISOString() : undefined,
+                    } as { start?: string; end?: string };
+                    if (!next.start && !next.end) {
+                      handleFilterChange('timeRange', undefined);
+                    } else {
+                      handleFilterChange('timeRange', next);
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    minWidth: '140px',
+                    padding: '4px 8px',
+                    border: `1px solid ${theme.colors.border}`,
+                    borderRadius: theme.radius.sm,
+                    backgroundColor: theme.colors.surface,
+                    color: theme.colors.text.primary,
+                    fontSize: '12px',
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {(localFilter.types?.length || localFilter.statuses?.length || localFilter.timeRange) && (
             <button
               onClick={() => {
                 setLocalFilter({});

@@ -225,6 +225,69 @@ export const mockHydrographData = generateTimeSeriesData(24, 28, 3, 1200, 200);
 export const mockHydrographYoY = generateTimeSeriesData(24, 26, 2, 1100, 150);
 export const mockHydrographMoM = generateTimeSeriesData(24, 27, 2, 1150, 180);
 
+export const mockStationHydrographs: Record<string, {
+  data: TimeSeriesData[];
+  dataYoY?: TimeSeriesData[];
+  dataMoM?: TimeSeriesData[];
+  thresholdLines?: { name: string; value: number; color: string; type: 'dashed' | 'solid' | 'dotted'; enabled: boolean }[];
+  mode?: 'water' | 'flow' | 'dual';
+  yAxisName?: string;
+  yAxisName2?: string;
+}> = {
+  s1: {
+    data: generateTimeSeriesData(24, 25, 8, 0, 0).map((d) => ({ ...d, value2: undefined })),
+    mode: 'water',
+    yAxisName: '降雨量(mm)',
+  },
+  s2: {
+    data: generateTimeSeriesData(24, 28, 3, 1200, 200),
+    dataYoY: generateTimeSeriesData(24, 26, 2, 1100, 150),
+    dataMoM: generateTimeSeriesData(24, 27, 2, 1150, 180),
+    thresholdLines: [
+      { name: '警戒水位', value: 28, color: '#faad14', type: 'dashed', enabled: true },
+      { name: '保证水位', value: 29.5, color: '#f5222d', type: 'dashed', enabled: true },
+    ],
+    mode: 'dual',
+    yAxisName: '水位(m)',
+    yAxisName2: '流量(m³/s)',
+  },
+  s3: {
+    data: generateTimeSeriesData(24, 125, 2, 85, 20),
+    dataYoY: generateTimeSeriesData(24, 123, 1.5, 75, 15),
+    thresholdLines: [
+      { name: '汛限水位', value: 127, color: '#faad14', type: 'dashed', enabled: true },
+      { name: '正常蓄水位', value: 128.5, color: '#52c41a', type: 'dashed', enabled: true },
+    ],
+    mode: 'dual',
+    yAxisName: '水位(m)',
+    yAxisName2: '入库流量(m³/s)',
+  },
+  s7: {
+    data: generateTimeSeriesData(24, 18, 6, 0, 0).map((d) => ({ ...d, value2: undefined })),
+    mode: 'water',
+    yAxisName: '降雨量(mm)',
+  },
+  s8: {
+    data: generateTimeSeriesData(24, 32, 2.5, 2100, 300),
+    thresholdLines: [
+      { name: '警戒水位', value: 33, color: '#faad14', type: 'dashed', enabled: true },
+      { name: '保证水位', value: 34.5, color: '#f5222d', type: 'dashed', enabled: true },
+    ],
+    mode: 'dual',
+    yAxisName: '水位(m)',
+    yAxisName2: '流量(m³/s)',
+  },
+  s9: {
+    data: generateTimeSeriesData(24, 98.5, 1.5, 45, 15),
+    thresholdLines: [
+      { name: '汛限水位', value: 100, color: '#faad14', type: 'dashed', enabled: true },
+    ],
+    mode: 'dual',
+    yAxisName: '水位(m)',
+    yAxisName2: '入库流量(m³/s)',
+  },
+};
+
 export const mockWarnings: WarningItem[] = [
   {
     id: 'w1',

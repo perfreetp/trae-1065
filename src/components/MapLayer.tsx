@@ -103,19 +103,35 @@ export const MapLayer: React.FC<MapLayerProps> = ({
 
   const computedBounds = useMemo((): MapBounds => {
     if (propMapBounds) return propMapBounds;
-    if (effectiveStations.length === 0) {
+
+    let allLngs: number[] = [];
+    let allLats: number[] = [];
+
+    if (effectiveStations.length > 0) {
+      allLngs = effectiveStations.map((s) => s.lng);
+      allLats = effectiveStations.map((s) => s.lat);
+    }
+
+    adminBoundaries.forEach((boundary) => {
+      const boundaryPoints = boundary.points || boundary.coordinates?.map(([lng, lat]) => ({ lng, lat })) || [];
+      boundaryPoints.forEach((p) => {
+        allLngs.push(p.lng);
+        allLats.push(p.lat);
+      });
+    });
+
+    if (allLngs.length === 0) {
       return { minLng: 0, minLat: 0, maxLng: 100, maxLat: 100 };
     }
-    const lngs = effectiveStations.map((s) => s.lng);
-    const lats = effectiveStations.map((s) => s.lat);
-    const padding = 5;
+
+    const padding = 2;
     return {
-      minLng: Math.min(...lngs) - padding,
-      minLat: Math.min(...lats) - padding,
-      maxLng: Math.max(...lngs) + padding,
-      maxLat: Math.max(...lats) + padding,
+      minLng: Math.min(...allLngs) - padding,
+      minLat: Math.min(...allLats) - padding,
+      maxLng: Math.max(...allLngs) + padding,
+      maxLat: Math.max(...allLats) + padding,
     };
-  }, [propMapBounds, effectiveStations]);
+  }, [propMapBounds, effectiveStations, adminBoundaries]);
 
   const clusters = useMemo((): (Station | AggregatedCluster)[] => {
     if (!enableAggregation || effectiveStations.length <= aggregationThreshold) {
@@ -314,23 +330,33 @@ export const MapLayer: React.FC<MapLayerProps> = ({
   };
 
   const renderBoundary = (boundary: AdminBoundary, index: number) => {
-    const points = boundary.coordinates
-      .map(([lng, lat]) => `${lngToX(lng)}%,${latToY(lat)}%`)
+    const boundaryPoints = boundary.points || boundary.coordinates?.map(([lng, lat]) => ({ lng, lat })) || [];
+    if (boundaryPoints.length === 0) return null;
+
+    const points = boundaryPoints
+      .map((p) => `${lngToX(p.lng)}%,${latToY(p.lat)}%`)
       .join(' ');
+
+    const fill = boundary.fillColor || boundary.color || `${theme.colors.primary}10`;
+    const stroke = boundary.strokeColor || boundary.color || theme.colors.primary;
+    const strokeWidth = boundary.strokeWidth || 2;
+    const strokeDasharray = boundary.strokeDasharray || 'none';
 
     return (
       <polygon
         key={`boundary-${index}`}
         points={points}
-        fill={boundary.color || `${theme.colors.primary}10`}
-        stroke={boundary.color || theme.colors.primary}
-        strokeWidth="2"
-        strokeDasharray="5,5"
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        strokeDasharray={strokeDasharray}
       />
     );
   };
 
-  if (effectiveStations.length === 0) {
+  const hasContent = effectiveStations.length > 0 || adminBoundaries.length > 0;
+
+  if (!hasContent) {
     return (
       <div
         ref={containerRef}
@@ -343,7 +369,7 @@ export const MapLayer: React.FC<MapLayerProps> = ({
           ...style,
         }}
       >
-        <Empty text="暂无站点数据" />
+        <Empty text="暂无地图数据" />
       </div>
     );
   }

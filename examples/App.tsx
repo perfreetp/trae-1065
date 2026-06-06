@@ -30,17 +30,30 @@ import {
   mockReportData,
   mockReportColumns,
   mockAdminBoundaries,
+  mockStationHydrographs,
 } from './mockData';
 
 const DemoContent: React.FC = () => {
   const { theme, mode } = useTheme();
-  const { selectedStationId } = useLinkage();
-  const { filteredStations, filters, setSelectedStationIds } = useDataFilter();
+  const { selectedStationId, setSelectedStationId, focusStationByWarning } = useLinkage();
+  const { filteredStations, filters, setSelectedStationIds, selectedStationIds } = useDataFilter();
   const pageRef = useRef<HTMLDivElement>(null);
 
   const selectedStation = useMemo(() => {
-    return mockStations.find((s) => s.id === selectedStationId) || filteredStations[0];
-  }, [selectedStationId, filteredStations]);
+    if (filteredStations.length === 0) return undefined;
+    const found = filteredStations.find((s) => s.id === selectedStationId);
+    if (found) return found;
+    if (filteredStations.length > 0) {
+      setTimeout(() => setSelectedStationId(filteredStations[0].id), 0);
+      return filteredStations[0];
+    }
+    return undefined;
+  }, [selectedStationId, filteredStations, setSelectedStationId]);
+
+  const stationHydrograph = useMemo(() => {
+    if (!selectedStation?.id) return null;
+    return mockStationHydrographs[selectedStation.id] || null;
+  }, [selectedStation]);
 
   const filteredWarnings = useMemo(() => {
     if (filters.selectedStationIds.length > 0) {
@@ -181,25 +194,48 @@ const DemoContent: React.FC = () => {
             marginBottom: theme.spacing.lg,
           }}
         >
-          <Hydrograph
-          title="水位流量过程线"
-          data={mockHydrographData}
-          dataYoY={mockHydrographYoY}
-          dataMoM={mockHydrographMoM}
-          showYoY={true}
-          showMoM={true}
-          showThresholdToggle={true}
-          mode="dual"
-          thresholdLines={[
-            { name: '警戒水位', value: 28, color: '#faad14', type: 'dashed', enabled: true },
-            { name: '保证水位', value: 30, color: '#f5222d', type: 'dashed', enabled: true },
-          ]}
-          height={380}
-        />
+          {stationHydrograph ? (
+            <Hydrograph
+              title={`${selectedStation?.name || '站点'} - 过程线`}
+              data={stationHydrograph.data}
+              dataYoY={stationHydrograph.dataYoY}
+              dataMoM={stationHydrograph.dataMoM}
+              showYoY={!!stationHydrograph.dataYoY}
+              showMoM={!!stationHydrograph.dataMoM}
+              showThresholdToggle={true}
+              mode={stationHydrograph.mode || 'dual'}
+              thresholdLines={stationHydrograph.thresholdLines}
+              yAxisName={stationHydrograph.yAxisName}
+              yAxisName2={stationHydrograph.yAxisName2}
+              height={380}
+            />
+          ) : (
+            <Hydrograph
+              title={`${selectedStation?.name || '站点'} - 过程线`}
+              data={[]}
+              mode="water"
+              height={380}
+            />
+          )}
           <WarningPanel
             warnings={filteredWarnings}
             maxHeight={380}
-            onWarningClick={(warning) => console.log('Warning clicked:', warning)}
+            onWarningClick={(warning) => {
+              console.log('Warning clicked:', warning);
+              const stationId = warning.stationId;
+              const isStationVisible = filteredStations.some((s) => s.id === stationId);
+              
+              if (!isStationVisible) {
+                const useGlobalFilter = selectedStationIds.length > 0;
+                if (useGlobalFilter) {
+                  setSelectedStationIds([...selectedStationIds, stationId]);
+                }
+              }
+              
+              setTimeout(() => {
+                focusStationByWarning(stationId, warning.time);
+              }, 50);
+            }}
             onHandle={(warning) => console.log('Handle warning:', warning)}
           />
         </div>
@@ -222,11 +258,12 @@ const DemoContent: React.FC = () => {
           <ReportTable
             title="站点数据报表"
             columns={mockReportColumns as any}
-            dataSource={filteredReportData}
+            dataSource={mockReportData}
             useGlobalFilter={true}
             filterOptions={{
               typeField: 'type',
               statusField: 'status',
+              timeField: 'time',
             }}
             onRowClick={(record) => console.log('Row clicked:', record)}
           />

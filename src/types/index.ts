@@ -37,17 +37,28 @@ export type StationType = 'rain' | 'water' | 'reservoir' | 'gate' | 'pump' | 'ri
 export type WarningLevel = 'normal' | 'attention' | 'warning' | 'danger' | 'severe';
 
 export interface ReservoirExtra {
-  waterLevel?: number;
-  storage?: number;
-  storagePercent?: number;
+  currentLevel?: number;
+  currentStorage?: number;
+  storageRate?: number;
   floodLimitLevel?: number;
   normalLevel?: number;
   deadLevel?: number;
+  totalCapacity?: number;
   inflow?: number;
   outflow?: number;
+  waterLevel?: number;
+  storage?: number;
+  storagePercent?: number;
 }
 
 export interface GateExtra {
+  openHeight?: number;
+  openPercent?: number;
+  totalHoles?: number;
+  openHoles?: number;
+  dischargeFlow?: number;
+  operationStatus?: 'open' | 'closed' | 'partial' | string;
+  gateType?: string;
   opening?: number;
   openingPercent?: number;
   gateCount?: number;
@@ -57,6 +68,13 @@ export interface GateExtra {
 }
 
 export interface PumpExtra {
+  totalPumps?: number;
+  runningPumps?: number;
+  totalFlow?: number;
+  totalPower?: number;
+  operationStatus?: 'running' | 'stopped' | 'partial' | string;
+  pumpType?: string;
+  singlePumpFlow?: number;
   runningCount?: number;
   totalCount?: number;
   flowRate?: number;
@@ -65,6 +83,11 @@ export interface PumpExtra {
 }
 
 export interface RainExtra {
+  rain1h?: number;
+  rain6h?: number;
+  rain12h?: number;
+  rain24h?: number;
+  rainTotal?: number;
   rainfall1h?: number;
   rainfall6h?: number;
   rainfall12h?: number;
@@ -73,6 +96,12 @@ export interface RainExtra {
 }
 
 export interface WaterExtra {
+  currentLevel?: number;
+  currentFlow?: number;
+  currentVelocity?: number;
+  waterTemp?: number;
+  warningLevel?: number;
+  guaranteeLevel?: number;
   waterLevel?: number;
   flowRate?: number;
   velocity?: number;
@@ -82,8 +111,13 @@ export interface WaterExtra {
 export interface RiskExtra {
   riskType?: string;
   riskLevel?: string;
-  affectedPeople?: number;
+  affectedPopulation?: number;
   displacement?: number;
+  displacementRate?: number;
+  monitoringPoints?: number;
+  affectedArea?: number;
+  rainfallIntensity?: number;
+  affectedPeople?: number;
 }
 
 export interface Station {
@@ -153,7 +187,12 @@ export interface MapBounds {
 
 export interface AdminBoundary {
   name: string;
-  coordinates: [number, number][];
+  coordinates?: [number, number][];
+  points?: { lng: number; lat: number }[];
   color?: string;
+  fillColor?: string;
+  strokeColor?: string;
+  strokeWidth?: number;
+  strokeDasharray?: string;
 }
 
