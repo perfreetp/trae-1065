@@ -1,12 +1,17 @@
-import React, { createContext, useContext, useCallback, useState } from 'react';
+import React, { createContext, useContext, useCallback, useState, useEffect } from 'react';
 
 interface LinkageContextType {
   selectedStationId: string | null;
   selectedTimeRange: { start: string; end: string } | null;
   currentTime: string | null;
+  highlightedWarningId: string | null;
+  focusedStationId: string | null;
   setSelectedStationId: (id: string | null) => void;
   setSelectedTimeRange: (range: { start: string; end: string } | null) => void;
   setCurrentTime: (time: string | null) => void;
+  setHighlightedWarningId: (id: string | null) => void;
+  setFocusedStationId: (id: string | null) => void;
+  focusStationByWarning: (stationId: string, warningTime: string) => void;
   subscribe: (callback: () => void) => () => void;
 }
 
@@ -16,6 +21,8 @@ export const LinkageProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
   const [selectedTimeRange, setSelectedTimeRange] = useState<{ start: string; end: string } | null>(null);
   const [currentTime, setCurrentTime] = useState<string | null>(null);
+  const [highlightedWarningId, setHighlightedWarningId] = useState<string | null>(null);
+  const [focusedStationId, setFocusedStationId] = useState<string | null>(null);
   const [listeners, setListeners] = useState<(() => void)[]>([]);
 
   const notifyListeners = useCallback(() => {
@@ -25,6 +32,7 @@ export const LinkageProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const handleSetSelectedStationId = useCallback(
     (id: string | null) => {
       setSelectedStationId(id);
+      setFocusedStationId(id);
       notifyListeners();
     },
     [notifyListeners]
@@ -46,6 +54,32 @@ export const LinkageProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [notifyListeners]
   );
 
+  const handleSetHighlightedWarningId = useCallback(
+    (id: string | null) => {
+      setHighlightedWarningId(id);
+      notifyListeners();
+    },
+    [notifyListeners]
+  );
+
+  const handleSetFocusedStationId = useCallback(
+    (id: string | null) => {
+      setFocusedStationId(id);
+      notifyListeners();
+    },
+    [notifyListeners]
+  );
+
+  const focusStationByWarning = useCallback(
+    (stationId: string, warningTime: string) => {
+      setSelectedStationId(stationId);
+      setFocusedStationId(stationId);
+      setCurrentTime(warningTime);
+      notifyListeners();
+    },
+    [notifyListeners]
+  );
+
   const subscribe = useCallback((callback: () => void) => {
     setListeners((prev) => [...prev, callback]);
     return () => {
@@ -59,9 +93,14 @@ export const LinkageProvider: React.FC<{ children: React.ReactNode }> = ({ child
         selectedStationId,
         selectedTimeRange,
         currentTime,
+        highlightedWarningId,
+        focusedStationId,
         setSelectedStationId: handleSetSelectedStationId,
         setSelectedTimeRange: handleSetSelectedTimeRange,
         setCurrentTime: handleSetCurrentTime,
+        setHighlightedWarningId: handleSetHighlightedWarningId,
+        setFocusedStationId: handleSetFocusedStationId,
+        focusStationByWarning,
         subscribe,
       }}
     >
@@ -77,9 +116,14 @@ export const useLinkage = (): LinkageContextType => {
       selectedStationId: null,
       selectedTimeRange: null,
       currentTime: null,
+      highlightedWarningId: null,
+      focusedStationId: null,
       setSelectedStationId: () => {},
       setSelectedTimeRange: () => {},
       setCurrentTime: () => {},
+      setHighlightedWarningId: () => {},
+      setFocusedStationId: () => {},
+      focusStationByWarning: () => {},
       subscribe: () => () => {},
     };
   }

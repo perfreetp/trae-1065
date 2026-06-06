@@ -1,6 +1,7 @@
 export { sdk as default } from './sdk';
 export { ThemeProvider, useTheme } from './theme/ThemeProvider';
 export { LinkageProvider, useLinkage } from './context/LinkageContext';
+export { DataProvider, useDataFilter } from './context/DataContext';
 
 export type {
   ThemeMode,
@@ -14,6 +15,8 @@ export type {
   FilterOption,
   BaseComponentProps,
   ExportOptions,
+  AdminBoundary,
+  MapBounds,
 } from './types';
 
 export { MapLayer } from './components/MapLayer';

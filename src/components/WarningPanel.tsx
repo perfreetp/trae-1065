@@ -54,7 +54,7 @@ export const WarningPanel: React.FC<WarningPanelProps> = ({
   onReady,
 }) => {
   const { theme } = useTheme();
-  const { setSelectedStationId } = useLinkage();
+  const { setSelectedStationId, highlightedWarningId, setHighlightedWarningId, focusStationByWarning, selectedStationId } = useLinkage();
   const [filterLevel, setFilterLevel] = useState<string>('all');
   const [onlyUnhandled, setOnlyUnhandled] = useState(false);
 
@@ -87,8 +87,9 @@ export const WarningPanel: React.FC<WarningPanelProps> = ({
   }, [warnings]);
 
   const handleWarningClick = (warning: WarningItem) => {
+    setHighlightedWarningId(warning.id);
     if (warning.stationId) {
-      setSelectedStationId(warning.stationId);
+      focusStationByWarning(warning.stationId, warning.time);
     }
     onWarningClick?.(warning);
     onClick?.(warning);
@@ -200,24 +201,33 @@ export const WarningPanel: React.FC<WarningPanelProps> = ({
         {filteredWarnings.length === 0 ? (
           <Empty text="暂无符合条件的预警" />
         ) : (
-          filteredWarnings.map((warning) => (
-            <div
-              key={warning.id}
-              className={classNames(
-                'water-sdk-warning-item',
-                warning.handled && 'water-sdk-warning-item--handled'
-              )}
-              onClick={() => handleWarningClick(warning)}
-              style={{
-                padding: theme.spacing.md,
-                borderBottom: `1px solid ${theme.colors.border}`,
-                cursor: 'pointer',
-                opacity: warning.handled ? 0.6 : 1,
-                transition: 'all 0.2s',
-                backgroundColor: `${getWarningColor(warning.level)}08`,
-                borderLeft: `3px solid ${getWarningColor(warning.level)}`,
-              }}
-            >
+          filteredWarnings.map((warning) => {
+            const isHighlighted =
+              warning.id === highlightedWarningId ||
+              (selectedStationId && warning.stationId === selectedStationId);
+            return (
+              <div
+                key={warning.id}
+                className={classNames(
+                  'water-sdk-warning-item',
+                  warning.handled && 'water-sdk-warning-item--handled'
+                )}
+                onClick={() => handleWarningClick(warning)}
+                style={{
+                  padding: theme.spacing.md,
+                  borderBottom: `1px solid ${theme.colors.border}`,
+                  cursor: 'pointer',
+                  opacity: warning.handled ? 0.6 : 1,
+                  transition: 'all 0.2s',
+                  backgroundColor: isHighlighted
+                    ? `${theme.colors.primary}20`
+                    : `${getWarningColor(warning.level)}08`,
+                  borderLeft: `3px solid ${
+                    isHighlighted ? theme.colors.primary : getWarningColor(warning.level)
+                  }`,
+                  boxShadow: isHighlighted ? `0 0 0 1px ${theme.colors.primary}40` : 'none',
+                }}
+              >
               <div style={{ display: 'flex', alignItems: 'center', gap: theme.spacing.sm, marginBottom: '6px' }}>
                 <span
                   style={{
@@ -281,7 +291,8 @@ export const WarningPanel: React.FC<WarningPanelProps> = ({
                 )
               )}
             </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

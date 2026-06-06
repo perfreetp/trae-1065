@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useTheme } from '../theme/ThemeProvider';
 import { useLinkage } from '../context/LinkageContext';
+import { useDataFilter } from '../context/DataContext';
 import {
   classNames,
   formatNumber,
@@ -8,123 +9,176 @@ import {
   getWarningColor,
   getStationColor,
 } from '../utils';
-import { Station, BaseComponentProps, LegendItem } from '../types';
+import { Station, BaseComponentProps, LegendItem, StationType, MapBounds, AdminBoundary } from '../types';
 import { Empty } from './common/Empty';
-import { Legend } from './common/Legend';
 
 export interface MapLayerProps extends BaseComponentProps {
-  stations: Station[];
+  stations?: Station[];
   showLegend?: boolean;
   enableAggregation?: boolean;
   aggregationThreshold?: number;
   enableFlashing?: boolean;
   showTooltip?: boolean;
-  visibleTypes?: string[];
+  visibleTypes?: StationType[];
   backgroundImage?: string;
-  mapBounds?: { minX: number; minY: number; maxX: number; maxY: number };
+  mapBounds?: MapBounds;
+  adminBoundaries?: AdminBoundary[];
+  useGlobalFilter?: boolean;
   onStationClick?: (station: Station) => void;
   onStationHover?: (station: Station | null) => void;
+  onLegendChange?: (items: LegendItem[]) => void;
 }
 
 interface AggregatedCluster {
   id: string;
   x: number;
   y: number;
+  lng: number;
+  lat: number;
   count: number;
   stations: Station[];
-  centerLng: number;
-  centerLat: number;
 }
 
+const stationTypeNames: Record<StationType, string> = {
+  rain: '雨量站',
+  water: '水位站',
+  reservoir: '水库',
+  gate: '闸门',
+  pump: '泵站',
+  risk: '风险点',
+};
+
 export const MapLayer: React.FC<MapLayerProps> = ({
-  stations = [],
+  stations: propStations,
   showLegend = true,
   enableAggregation = true,
   aggregationThreshold = 50,
   enableFlashing = true,
   showTooltip = true,
-  visibleTypes,
+  visibleTypes: propVisibleTypes,
   backgroundImage,
-  mapBounds,
+  mapBounds: propMapBounds,
+  adminBoundaries = [],
+  useGlobalFilter = false,
   className,
   style,
   onStationClick,
   onStationHover,
+  onLegendChange,
   onClick,
   onReady,
 }) => {
   const { theme, mode } = useTheme();
   const { selectedStationId, setSelectedStationId } = useLinkage();
+  const { filteredStations, isTypeVisible, toggleType } = useDataFilter();
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredStation, setHoveredStation] = useState<Station | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [expandedCluster, setExpandedCluster] = useState<AggregatedCluster | null>(null);
+  const [legendItems, setLegendItems] = useState<LegendItem[]>([
+    { name: stationTypeNames.rain, color: getStationColor('rain'), visible: true, type: 'rain' },
+    { name: stationTypeNames.water, color: getStationColor('water'), visible: true, type: 'water' },
+    { name: stationTypeNames.reservoir, color: getStationColor('reservoir'), visible: true, type: 'reservoir' },
+    { name: stationTypeNames.gate, color: getStationColor('gate'), visible: true, type: 'gate' },
+    { name: stationTypeNames.pump, color: getStationColor('pump'), visible: true, type: 'pump' },
+    { name: stationTypeNames.risk, color: getStationColor('risk'), visible: true, type: 'risk' },
+  ]);
 
   useEffect(() => {
     onReady?.();
   }, [onReady]);
 
-  const filteredStations = useMemo(() => {
-    if (!visibleTypes || visibleTypes.length === 0) return stations;
-    return stations.filter((s) => visibleTypes.includes(s.type));
-  }, [stations, visibleTypes]);
+  const effectiveStations = useMemo(() => {
+    const baseStations = useGlobalFilter ? filteredStations : (propStations || []);
+    const legendVisibleTypes = legendItems.filter((i) => i.visible).map((i) => i.type as StationType);
+    const propTypes = propVisibleTypes && propVisibleTypes.length > 0 ? propVisibleTypes : null;
+
+    return baseStations.filter((station) => {
+      if (!legendVisibleTypes.includes(station.type)) return false;
+      if (propTypes && !propTypes.includes(station.type)) return false;
+      if (useGlobalFilter && !isTypeVisible(station.type)) return false;
+      return true;
+    });
+  }, [propStations, useGlobalFilter, filteredStations, legendItems, propVisibleTypes, isTypeVisible]);
+
+  const computedBounds = useMemo((): MapBounds => {
+    if (propMapBounds) return propMapBounds;
+    if (effectiveStations.length === 0) {
+      return { minLng: 0, minLat: 0, maxLng: 100, maxLat: 100 };
+    }
+    const lngs = effectiveStations.map((s) => s.lng);
+    const lats = effectiveStations.map((s) => s.lat);
+    const padding = 5;
+    return {
+      minLng: Math.min(...lngs) - padding,
+      minLat: Math.min(...lats) - padding,
+      maxLng: Math.max(...lngs) + padding,
+      maxLat: Math.max(...lats) + padding,
+    };
+  }, [propMapBounds, effectiveStations]);
 
   const clusters = useMemo((): (Station | AggregatedCluster)[] => {
-    if (!enableAggregation || filteredStations.length <= aggregationThreshold) {
-      return filteredStations;
+    if (!enableAggregation || effectiveStations.length <= aggregationThreshold) {
+      return effectiveStations;
     }
 
-    const gridSize = 50;
+    const gridSizeLng = (computedBounds.maxLng - computedBounds.minLng) / 10;
+    const gridSizeLat = (computedBounds.maxLat - computedBounds.minLat) / 10;
     const clusterMap = new Map<string, AggregatedCluster>();
 
-    filteredStations.forEach((station) => {
-      const gridX = Math.floor(station.lng / gridSize);
-      const gridY = Math.floor(station.lat / gridSize);
+    effectiveStations.forEach((station) => {
+      const gridX = Math.floor((station.lng - computedBounds.minLng) / gridSizeLng);
+      const gridY = Math.floor((station.lat - computedBounds.minLat) / gridSizeLat);
       const key = `${gridX}-${gridY}`;
 
       if (!clusterMap.has(key)) {
         clusterMap.set(key, {
           id: `cluster-${key}`,
-          x: gridX * gridSize + gridSize / 2,
-          y: gridY * gridSize + gridSize / 2,
+          x: gridX * gridSizeLng + gridSizeLng / 2 + computedBounds.minLng,
+          y: gridY * gridSizeLat + gridSizeLat / 2 + computedBounds.minLat,
+          lng: 0,
+          lat: 0,
           count: 0,
           stations: [],
-          centerLng: 0,
-          centerLat: 0,
         });
       }
 
       const cluster = clusterMap.get(key)!;
       cluster.count++;
       cluster.stations.push(station);
-      cluster.centerLng += station.lng;
-      cluster.centerLat += station.lat;
+      cluster.lng += station.lng;
+      cluster.lat += station.lat;
     });
 
     return Array.from(clusterMap.values()).map((cluster) => ({
       ...cluster,
-      centerLng: cluster.centerLng / cluster.count,
-      centerLat: cluster.centerLat / cluster.count,
+      lng: cluster.lng / cluster.count,
+      lat: cluster.lat / cluster.count,
     }));
-  }, [filteredStations, enableAggregation, aggregationThreshold]);
+  }, [effectiveStations, enableAggregation, aggregationThreshold, computedBounds]);
 
-  const legendItems: LegendItem[] = [
-    { name: '雨量站', color: getStationColor('rain'), visible: true },
-    { name: '水位站', color: getStationColor('water'), visible: true },
-    { name: '水库', color: getStationColor('reservoir'), visible: true },
-    { name: '闸门', color: getStationColor('gate'), visible: true },
-    { name: '泵站', color: getStationColor('pump'), visible: true },
-    { name: '风险点', color: getStationColor('risk'), visible: true },
-  ];
+  const lngToX = (lng: number) => {
+    return ((lng - computedBounds.minLng) / (computedBounds.maxLng - computedBounds.minLng)) * 100;
+  };
 
-  const getPosition = (station: Station) => {
-    if (mapBounds) {
-      const x = ((station.lng - mapBounds.minX) / (mapBounds.maxX - mapBounds.minX)) * 100;
-      const y = ((station.lat - mapBounds.minY) / (mapBounds.maxY - mapBounds.minY)) * 100;
-      return { x: `${x}%`, y: `${y}%` };
+  const latToY = (lat: number) => {
+    return 100 - ((lat - computedBounds.minLat) / (computedBounds.maxLat - computedBounds.minLat)) * 100;
+  };
+
+  const handleLegendChange = (items: LegendItem[]) => {
+    setLegendItems(items);
+    onLegendChange?.(items);
+    if (useGlobalFilter) {
+      items.forEach((item) => {
+        if (item.type) {
+          if (!item.visible && isTypeVisible(item.type)) {
+            toggleType(item.type);
+          } else if (item.visible && !isTypeVisible(item.type)) {
+            toggleType(item.type);
+          }
+        }
+      });
     }
-    return { x: `${(station.lng % 100)}%`, y: `${(station.lat % 100)}%` };
   };
 
   const handleMouseEnter = (e: React.MouseEvent, station: Station) => {
@@ -142,12 +196,18 @@ export const MapLayer: React.FC<MapLayerProps> = ({
   const handleStationClick = (e: React.MouseEvent, station: Station) => {
     e.stopPropagation();
     setSelectedStationId(station.id);
+    setExpandedCluster(null);
     onStationClick?.(station);
     onClick?.(station);
   };
 
+  const handleClusterClick = (cluster: AggregatedCluster) => {
+    setExpandedCluster(expandedCluster?.id === cluster.id ? null : cluster);
+  };
+
   const renderMarker = (station: Station) => {
-    const pos = getPosition(station);
+    const x = lngToX(station.lng);
+    const y = latToY(station.lat);
     const isSelected = selectedStationId === station.id;
     const isRisk = station.type === 'risk';
     const color = getStationColor(station.type);
@@ -162,8 +222,8 @@ export const MapLayer: React.FC<MapLayerProps> = ({
         )}
         style={{
           position: 'absolute',
-          left: pos.x,
-          top: pos.y,
+          left: `${x}%`,
+          top: `${y}%`,
           transform: 'translate(-50%, -50%)',
           cursor: 'pointer',
           zIndex: isSelected ? 10 : 1,
@@ -174,8 +234,8 @@ export const MapLayer: React.FC<MapLayerProps> = ({
       >
         <div
           style={{
-            width: station.type === 'reservoir' ? '24px' : '16px',
-            height: station.type === 'reservoir' ? '24px' : '16px',
+            width: station.type === 'reservoir' ? '24px' : '18px',
+            height: station.type === 'reservoir' ? '24px' : '18px',
             borderRadius: station.type === 'reservoir' ? '4px' : '50%',
             backgroundColor: color,
             border: `2px solid ${isSelected ? theme.colors.primary : '#fff'}`,
@@ -203,7 +263,7 @@ export const MapLayer: React.FC<MapLayerProps> = ({
               transform: 'translateX(-50%)',
               marginTop: '2px',
               padding: '1px 4px',
-              backgroundColor: 'rgba(0,0,0,0.7)',
+              backgroundColor: 'rgba(0,0,0,0.75)',
               color: '#fff',
               fontSize: '10px',
               borderRadius: '2px',
@@ -218,34 +278,34 @@ export const MapLayer: React.FC<MapLayerProps> = ({
   };
 
   const renderCluster = (cluster: AggregatedCluster) => {
-    const pos = { x: `${cluster.x % 100}%`, y: `${cluster.y % 100}%` };
-    const size = Math.min(40, 20 + cluster.count / 5);
+    const x = lngToX(cluster.lng);
+    const y = latToY(cluster.lat);
+    const size = Math.min(48, 24 + cluster.count);
 
     return (
       <div
         key={cluster.id}
         className="water-sdk-map-cluster"
+        onClick={() => handleClusterClick(cluster)}
         style={{
           position: 'absolute',
-          left: pos.x,
-          top: pos.y,
+          left: `${x}%`,
+          top: `${y}%`,
           transform: 'translate(-50%, -50%)',
           width: `${size}px`,
           height: `${size}px`,
           borderRadius: '50%',
           backgroundColor: `${theme.colors.primary}90`,
-          border: '2px solid #fff',
+          border: '3px solid #fff',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           color: '#fff',
-          fontSize: '12px',
+          fontSize: '13px',
           fontWeight: 'bold',
           cursor: 'pointer',
           boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-        }}
-        onClick={() => {
-          setZoom((z) => z * 1.5);
+          zIndex: 5,
         }}
       >
         {cluster.count}
@@ -253,7 +313,24 @@ export const MapLayer: React.FC<MapLayerProps> = ({
     );
   };
 
-  if (filteredStations.length === 0) {
+  const renderBoundary = (boundary: AdminBoundary, index: number) => {
+    const points = boundary.coordinates
+      .map(([lng, lat]) => `${lngToX(lng)}%,${latToY(lat)}%`)
+      .join(' ');
+
+    return (
+      <polygon
+        key={`boundary-${index}`}
+        points={points}
+        fill={boundary.color || `${theme.colors.primary}10`}
+        stroke={boundary.color || theme.colors.primary}
+        strokeWidth="2"
+        strokeDasharray="5,5"
+      />
+    );
+  };
+
+  if (effectiveStations.length === 0) {
     return (
       <div
         ref={containerRef}
@@ -285,7 +362,53 @@ export const MapLayer: React.FC<MapLayerProps> = ({
     >
       {showLegend && (
         <div style={{ position: 'absolute', top: theme.spacing.sm, right: theme.spacing.sm, zIndex: 20 }}>
-          <Legend items={legendItems} />
+          <div
+            style={{
+              backgroundColor: theme.colors.surface,
+              borderRadius: theme.radius.sm,
+              border: `1px solid ${theme.colors.border}`,
+              padding: theme.spacing.sm,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {legendItems.map((item, index) => (
+                <div
+                  key={item.name}
+                  onClick={() => {
+                    const newItems = [...legendItems];
+                    newItems[index] = { ...newItems[index], visible: !newItems[index].visible };
+                    handleLegendChange(newItems);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: theme.spacing.xs,
+                    cursor: 'pointer',
+                    opacity: item.visible ? 1 : 0.4,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: '12px',
+                      height: '12px',
+                      borderRadius: item.type === 'reservoir' ? '2px' : '50%',
+                      backgroundColor: item.color,
+                    }}
+                  />
+                  <span style={{ fontSize: '11px', color: theme.colors.text.secondary }}>
+                    {item.name}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={item.visible}
+                    readOnly
+                    style={{ marginLeft: 'auto', transform: 'scale(0.8)' }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -294,13 +417,11 @@ export const MapLayer: React.FC<MapLayerProps> = ({
           position: 'relative',
           width: '100%',
           height: '100%',
-          minHeight: '400px',
+          minHeight: '450px',
           backgroundImage: backgroundImage ? `url(${backgroundImage})` : 'none',
-          backgroundSize: 'cover',
+          backgroundSize: '100% 100%',
           backgroundPosition: 'center',
-          backgroundColor: mode === 'dark' ? '#1a2733' : '#e8f4f8',
-          transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
-          transition: 'transform 0.3s ease',
+          backgroundColor: mode === 'dark' ? '#0f1a24' : '#e6f3f7',
         }}
       >
         <svg
@@ -310,15 +431,22 @@ export const MapLayer: React.FC<MapLayerProps> = ({
             left: 0,
             width: '100%',
             height: '100%',
-            opacity: 0.3,
           }}
         >
           <defs>
-            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-              <path d="M 40 0 L 0 0 0 40" fill="none" stroke={theme.colors.border} strokeWidth="0.5" />
+            <pattern id="mapGrid" width="5%" height="5%" patternUnits="userSpaceOnUse">
+              <path
+                d="M 5% 0 L 0 0 0 5%"
+                fill="none"
+                stroke={theme.colors.border}
+                strokeWidth="0.5"
+                opacity="0.5"
+              />
             </pattern>
           </defs>
-          <rect width="100%" height="100%" fill="url(#grid)" />
+          <rect width="100%" height="100%" fill="url(#mapGrid)" />
+
+          {adminBoundaries.map((boundary, index) => renderBoundary(boundary, index))}
         </svg>
 
         {clusters.map((item) => {
@@ -327,6 +455,89 @@ export const MapLayer: React.FC<MapLayerProps> = ({
           }
           return renderMarker(item as Station);
         })}
+
+        {expandedCluster && (
+          <div
+            style={{
+              position: 'absolute',
+              left: `${lngToX(expandedCluster.lng)}%`,
+              top: `${latToY(expandedCluster.lat)}%`,
+              transform: 'translate(-50%, -100%)',
+              marginTop: '-10px',
+              zIndex: 50,
+              minWidth: '200px',
+              maxWidth: '300px',
+              maxHeight: '300px',
+              overflowY: 'auto',
+              backgroundColor: theme.colors.surface,
+              border: `1px solid ${theme.colors.border}`,
+              borderRadius: theme.radius.sm,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+            }}
+          >
+            <div
+              style={{
+                padding: theme.spacing.sm,
+                borderBottom: `1px solid ${theme.colors.border}`,
+                fontSize: '12px',
+                fontWeight: 600,
+                color: theme.colors.text.primary,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <span>聚合站点 ({expandedCluster.count})</span>
+              <button
+                onClick={() => setExpandedCluster(null)}
+                style={{
+                  border: 'none',
+                  background: 'none',
+                  cursor: 'pointer',
+                  color: theme.colors.text.secondary,
+                  fontSize: '14px',
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div>
+              {expandedCluster.stations.map((station) => (
+                <div
+                  key={station.id}
+                  onClick={(e) => handleStationClick(e, station)}
+                  style={{
+                    padding: `${theme.spacing.xs} ${theme.spacing.sm}`,
+                    cursor: 'pointer',
+                    borderBottom: `1px solid ${theme.colors.border}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: theme.spacing.xs,
+                  }}
+                  onMouseEnter={() => setHoveredStation(station)}
+                  onMouseLeave={() => setHoveredStation(null)}
+                >
+                  <div
+                    style={{
+                      width: '10px',
+                      height: '10px',
+                      borderRadius: '50%',
+                      backgroundColor: getStationColor(station.type),
+                    }}
+                  />
+                  <span style={{ fontSize: '12px', color: theme.colors.text.primary, flex: 1 }}>
+                    {station.name}
+                  </span>
+                  {station.value !== undefined && (
+                    <span style={{ fontSize: '11px', color: theme.colors.text.secondary }}>
+                      {formatNumber(station.value)}{station.unit || ''}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {showTooltip && hoveredStation && (
@@ -334,8 +545,8 @@ export const MapLayer: React.FC<MapLayerProps> = ({
           className="water-sdk-map-tooltip"
           style={{
             position: 'fixed',
-            left: tooltipPos.x + 10,
-            top: tooltipPos.y + 10,
+            left: tooltipPos.x + 12,
+            top: tooltipPos.y + 12,
             zIndex: 1000,
             padding: theme.spacing.sm,
             backgroundColor: theme.colors.surface,
@@ -343,34 +554,29 @@ export const MapLayer: React.FC<MapLayerProps> = ({
             borderRadius: theme.radius.sm,
             boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
             fontSize: '12px',
-            maxWidth: '200px',
+            maxWidth: '220px',
             pointerEvents: 'none',
           }}
         >
           <div style={{ fontWeight: 'bold', marginBottom: theme.spacing.xs, color: theme.colors.text.primary }}>
             {hoveredStation.name}
           </div>
-          <div style={{ color: theme.colors.text.secondary }}>
-            类型：{hoveredStation.type}
+          <div style={{ color: theme.colors.text.secondary, marginBottom: '2px' }}>
+            类型：{stationTypeNames[hoveredStation.type] || hoveredStation.type}
           </div>
           {hoveredStation.value !== undefined && (
-            <div style={{ color: theme.colors.text.secondary }}>
+            <div style={{ color: theme.colors.text.secondary, marginBottom: '2px' }}>
               数值：{formatNumber(hoveredStation.value)}{hoveredStation.unit || ''}
             </div>
           )}
-          {hoveredStation.value2 !== undefined && (
-            <div style={{ color: theme.colors.text.secondary }}>
-              数值2：{formatNumber(hoveredStation.value2)}
-            </div>
-          )}
           {hoveredStation.status && (
-            <div style={{ color: getWarningColor(hoveredStation.status) }}>
+            <div style={{ color: getWarningColor(hoveredStation.status), marginBottom: '2px' }}>
               状态：{hoveredStation.status}
             </div>
           )}
           {hoveredStation.updateTime && (
-            <div style={{ color: theme.colors.text.secondary, marginTop: '4px' }}>
-              更新时间：{formatTime(hoveredStation.updateTime)}
+            <div style={{ color: theme.colors.text.secondary, fontSize: '11px', marginTop: '4px' }}>
+              更新：{formatTime(hoveredStation.updateTime, 'MM-DD HH:mm')}
             </div>
           )}
         </div>

@@ -2,13 +2,13 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { useTheme } from '../theme/ThemeProvider';
 import { useLinkage } from '../context/LinkageContext';
+import { useDataFilter } from '../context/DataContext';
 import { classNames, formatNumber, formatTime } from '../utils';
-import { TimeSeriesData, ThresholdLine, BaseComponentProps, LegendItem } from '../types';
+import { TimeSeriesData, ThresholdLine, BaseComponentProps } from '../types';
 import { Empty } from './common/Empty';
-import { Legend } from './common/Legend';
 
 export interface HydrographProps extends BaseComponentProps {
-  data: TimeSeriesData[];
+  data?: TimeSeriesData[];
   dataYoY?: TimeSeriesData[];
   dataMoM?: TimeSeriesData[];
   title?: string;
@@ -19,15 +19,21 @@ export interface HydrographProps extends BaseComponentProps {
   showMoM?: boolean;
   thresholdLines?: ThresholdLine[];
   showLegend?: boolean;
+  showThresholdToggle?: boolean;
   yAxisName?: string;
   yAxisName2?: string;
+  timeRange?: { start: string; end: string };
+  showTimeRangePicker?: boolean;
+  highlightOverThreshold?: boolean;
+  useGlobalFilter?: boolean;
   currentTime?: string;
+  onTimeRangeChange?: (range: { start: string; end: string }) => void;
   onTimeChange?: (time: string) => void;
   onDataClick?: (data: TimeSeriesData) => void;
 }
 
 export const Hydrograph: React.FC<HydrographProps> = ({
-  data = [],
+  data: propData = [],
   dataYoY = [],
   dataMoM = [],
   title,
@@ -36,11 +42,17 @@ export const Hydrograph: React.FC<HydrographProps> = ({
   showSwitcher = true,
   showYoY = false,
   showMoM = false,
-  thresholdLines = [],
+  thresholdLines: propThresholdLines = [],
   showLegend = true,
+  showThresholdToggle = true,
   yAxisName = '水位',
   yAxisName2 = '流量',
-  currentTime,
+  timeRange: propTimeRange,
+  showTimeRangePicker = true,
+  highlightOverThreshold = true,
+  useGlobalFilter = false,
+  currentTime: propCurrentTime,
+  onTimeRangeChange,
   onTimeChange,
   onDataClick,
   className,
@@ -49,87 +61,166 @@ export const Hydrograph: React.FC<HydrographProps> = ({
   onReady,
 }) => {
   const { theme, mode } = useTheme();
-  const { currentTime: linkageTime, setCurrentTime } = useLinkage();
+  const { currentTime: linkageTime, setCurrentTime, selectedTimeRange, setSelectedTimeRange } = useLinkage();
   const chartRef = useRef<ReactECharts>(null);
   const [dataType, setDataType] = useState<'water' | 'flow' | 'both'>('water');
-  const [legendItems, setLegendItems] = useState<LegendItem[]>([
-    { name: '当前', color: theme.colors.primary, visible: true },
-    { name: '同比', color: theme.colors.warning, visible: showYoY },
-    { name: '环比', color: theme.colors.success, visible: showMoM },
-  ]);
+  const [showYoYLine, setShowYoY] = useState(showYoY);
+  const [showMoMLine, setShowMoM] = useState(showMoM);
+  const [thresholdLines, setThresholdLines] = useState<ThresholdLine[]>(
+    propThresholdLines.map((t) => ({ ...t, enabled: t.enabled !== false }))
+  );
+  const [localTimeRange, setLocalTimeRange] = useState<{ start: string; end: string } | null>(null);
 
   useEffect(() => {
     onReady?.();
   }, [onReady]);
 
-  const activeCurrentTime = currentTime || linkageTime;
+  useEffect(() => {
+    setThresholdLines(propThresholdLines.map((t) => ({ ...t, enabled: t.enabled !== false })));
+  }, [propThresholdLines]);
+
+  const activeTimeRange = propTimeRange || selectedTimeRange || localTimeRange;
+  const activeCurrentTime = propCurrentTime || linkageTime;
+
+  const filteredData = useMemo(() => {
+    if (!activeTimeRange) return propData;
+    const start = new Date(activeTimeRange.start).getTime();
+    const end = new Date(activeTimeRange.end).getTime();
+    return propData.filter((d) => {
+      const t = new Date(d.time).getTime();
+      return t >= start && t <= end;
+    });
+  }, [propData, activeTimeRange]);
+
+  const enabledThresholds = useMemo(
+    () => thresholdLines.filter((t) => t.enabled),
+    [thresholdLines]
+  );
+
+  const dataWithThresholdFlag = useMemo(() => {
+    if (!highlightOverThreshold || enabledThresholds.length === 0) {
+      return filteredData.map((d) => ({ ...d, isOverThreshold: false }));
+    }
+    const maxThreshold = Math.max(...enabledThresholds.map((t) => t.value));
+    return filteredData.map((d) => ({
+      ...d,
+      isOverThreshold: (d.value || 0) > maxThreshold,
+    }));
+  }, [filteredData, enabledThresholds, highlightOverThreshold]);
 
   const chartOption = useMemo(() => {
-    if (data.length === 0) return {};
+    if (dataWithThresholdFlag.length === 0) return {};
 
-    const xAxisData = data.map((d) => formatTime(d.time, 'HH:mm'));
+    const xAxisData = dataWithThresholdFlag.map((d) => formatTime(d.time, 'HH:mm'));
     const series: any[] = [];
 
     const mainColor = theme.colors.primary;
 
-    if (legendItems[0].visible) {
-      if (dataType !== 'flow') {
+    if (dataType !== 'flow') {
+      const values = dataWithThresholdFlag.map((d) => [d.time, d.value]);
+      series.push({
+        name: `${yAxisName}(${unit})`,
+        type: 'line',
+        data: values,
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        lineStyle: {
+          color: mainColor,
+          width: 2,
+        },
+        itemStyle: {
+          color: (params: any) => {
+            const d = dataWithThresholdFlag[params.dataIndex];
+            return d?.isOverThreshold ? theme.colors.danger : mainColor;
+          },
+        },
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: `${mainColor}40` },
+              { offset: 1, color: `${mainColor}05` },
+            ],
+          },
+        },
+        yAxisIndex: 0,
+        markLine:
+          enabledThresholds.length > 0
+            ? {
+                silent: false,
+                symbol: 'none',
+                data: enabledThresholds.map((line) => ({
+                  yAxis: line.value,
+                  name: line.name,
+                  lineStyle: {
+                    color: line.color || theme.colors.danger,
+                    type: line.type || 'dashed',
+                    width: 2,
+                  },
+                  label: {
+                    formatter: line.name,
+                    color: line.color || theme.colors.danger,
+                    fontSize: 11,
+                  },
+                })),
+              }
+            : undefined,
+      });
+
+      if (highlightOverThreshold && enabledThresholds.length > 0) {
+        const maxThreshold = Math.max(...enabledThresholds.map((t) => t.value));
+        const overThresholdData = dataWithThresholdFlag.map((d) =>
+          d.isOverThreshold ? [d.time, d.value] : null
+        );
         series.push({
-          name: `${yAxisName}(${unit})`,
+          name: '超阈值',
           type: 'line',
-          data: data.map((d) => d.value),
+          data: overThresholdData,
           smooth: true,
           symbol: 'circle',
-          symbolSize: 6,
+          symbolSize: 8,
           lineStyle: {
-            color: mainColor,
-            width: 2,
+            color: theme.colors.danger,
+            width: 3,
           },
           itemStyle: {
-            color: mainColor,
-          },
-          areaStyle: {
-            color: {
-              type: 'linear',
-              x: 0,
-              y: 0,
-              x2: 0,
-              y2: 1,
-              colorStops: [
-                { offset: 0, color: `${mainColor}40` },
-                { offset: 1, color: `${mainColor}05` },
-              ],
-            },
+            color: theme.colors.danger,
           },
           yAxisIndex: 0,
-        });
-      }
-
-      if (dataType !== 'water' && data[0].value2 !== undefined) {
-        series.push({
-          name: `${yAxisName2}(${unit2})`,
-          type: 'line',
-          data: data.map((d) => d.value2),
-          smooth: true,
-          symbol: 'circle',
-          symbolSize: 6,
-          lineStyle: {
-            color: theme.colors.info,
-            width: 2,
-          },
-          itemStyle: {
-            color: theme.colors.info,
-          },
-          yAxisIndex: 1,
+          silent: true,
         });
       }
     }
 
-    if (legendItems[1].visible && showYoY && dataYoY.length > 0) {
+    if (dataType !== 'water' && dataWithThresholdFlag[0]?.value2 !== undefined) {
+      series.push({
+        name: `${yAxisName2}(${unit2})`,
+        type: 'line',
+        data: dataWithThresholdFlag.map((d) => [d.time, d.value2]),
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        lineStyle: {
+          color: theme.colors.info,
+          width: 2,
+        },
+        itemStyle: {
+          color: theme.colors.info,
+        },
+        yAxisIndex: 1,
+      });
+    }
+
+    if (showYoYLine && dataYoY.length > 0) {
       series.push({
         name: `同比${yAxisName}`,
         type: 'line',
-        data: dataYoY.map((d) => d.value),
+        data: dataYoY.map((d) => [d.time, d.value]),
         smooth: true,
         symbol: 'circle',
         symbolSize: 4,
@@ -145,11 +236,11 @@ export const Hydrograph: React.FC<HydrographProps> = ({
       });
     }
 
-    if (legendItems[2].visible && showMoM && dataMoM.length > 0) {
+    if (showMoMLine && dataMoM.length > 0) {
       series.push({
         name: `环比${yAxisName}`,
         type: 'line',
-        data: dataMoM.map((d) => d.value),
+        data: dataMoM.map((d) => [d.time, d.value]),
         smooth: true,
         symbol: 'circle',
         symbolSize: 4,
@@ -163,29 +254,6 @@ export const Hydrograph: React.FC<HydrographProps> = ({
         },
         yAxisIndex: 0,
       });
-    }
-
-    const markLine = {
-      silent: false,
-      symbol: 'none',
-      data: thresholdLines.map((line) => ({
-        yAxis: line.value,
-        name: line.name,
-        lineStyle: {
-          color: line.color || theme.colors.danger,
-          type: line.type || 'dashed',
-          width: 2,
-        },
-        label: {
-          formatter: line.name,
-          color: line.color || theme.colors.danger,
-          fontSize: 11,
-        },
-      })),
-    };
-
-    if (series.length > 0 && thresholdLines.length > 0) {
-      series[0].markLine = markLine;
     }
 
     const yAxis: any[] = [
@@ -237,10 +305,14 @@ export const Hydrograph: React.FC<HydrographProps> = ({
           color: theme.colors.text.primary,
         },
         formatter: (params: any[]) => {
-          const time = data[params[0]?.dataIndex]?.time;
+          if (params.length === 0) return '';
+          const time = params[0]?.value?.[0];
           let result = `<div style="font-weight:bold;margin-bottom:4px">${formatTime(time || '')}</div>`;
           params.forEach((p) => {
-            result += `<div>${p.marker} ${p.seriesName}: <b>${formatNumber(p.value)}</b></div>`;
+            if (p.value !== null && p.value !== undefined) {
+              const val = Array.isArray(p.value) ? p.value[1] : p.value;
+              result += `<div>${p.marker} ${p.seriesName}: <b>${formatNumber(val)}</b></div>`;
+            }
           });
           return result;
         },
@@ -249,56 +321,69 @@ export const Hydrograph: React.FC<HydrographProps> = ({
         left: '3%',
         right: dataType === 'both' ? '10%' : '3%',
         top: '10%',
-        bottom: '10%',
+        bottom: '15%',
         containLabel: true,
       },
       xAxis: {
-        type: 'category',
-        data: xAxisData,
+        type: 'time',
         axisLine: {
           lineStyle: { color: theme.colors.border },
         },
         axisLabel: {
           color: theme.colors.text.secondary,
           fontSize: 11,
-          rotate: data.length > 20 ? 30 : 0,
+          formatter: (value: number) => formatTime(new Date(value).toISOString(), 'HH:mm'),
         },
       },
       yAxis,
       series,
-      dataZoom: activeCurrentTime
-        ? [
-            {
-              type: 'inside',
-              start: 0,
-              end: 100,
-            },
-            {
-              type: 'slider',
-              start: 0,
-              end: 100,
-              height: 20,
-              bottom: 5,
-              borderColor: 'transparent',
-              backgroundColor: `${theme.colors.border}50`,
-              fillerColor: `${theme.colors.primary}30`,
-              handleStyle: {
-                color: theme.colors.primary,
-              },
-              textStyle: {
-                color: theme.colors.text.secondary,
-              },
-            },
-          ]
-        : undefined,
+      dataZoom: [
+        {
+          type: 'inside',
+          start: 0,
+          end: 100,
+        },
+        {
+          type: 'slider',
+          start: 0,
+          end: 100,
+          height: 24,
+          bottom: 5,
+          borderColor: 'transparent',
+          backgroundColor: `${theme.colors.border}50`,
+          fillerColor: `${theme.colors.primary}30`,
+          handleStyle: {
+            color: theme.colors.primary,
+          },
+          textStyle: {
+            color: theme.colors.text.secondary,
+          },
+          labelFormatter: (value: number) => formatTime(new Date(value).toISOString(), 'MM-DD HH:mm'),
+        },
+      ],
     };
-  }, [data, dataYoY, dataMoM, dataType, legendItems, thresholdLines, theme, mode, yAxisName, yAxisName2, unit, unit2, showYoY, showMoM, activeCurrentTime]);
+  }, [
+    dataWithThresholdFlag,
+    dataYoY,
+    dataMoM,
+    dataType,
+    showYoYLine,
+    showMoMLine,
+    enabledThresholds,
+    theme,
+    mode,
+    yAxisName,
+    yAxisName2,
+    unit,
+    unit2,
+    highlightOverThreshold,
+  ]);
 
   const onChartEvents = useMemo(
     () => ({
       click: (params: any) => {
-        if (params.dataIndex !== undefined && data[params.dataIndex]) {
-          const clickedData = data[params.dataIndex];
+        if (params.dataIndex !== undefined && dataWithThresholdFlag[params.dataIndex]) {
+          const clickedData = dataWithThresholdFlag[params.dataIndex];
           onDataClick?.(clickedData);
           onClick?.(clickedData);
           if (onTimeChange) {
@@ -307,11 +392,33 @@ export const Hydrograph: React.FC<HydrographProps> = ({
           setCurrentTime(clickedData.time);
         }
       },
+      dataZoom: (params: any) => {
+        const chart = chartRef.current?.getEchartsInstance();
+        if (chart) {
+          const option = chart.getOption() as any;
+          const dataZoom = option.dataZoom?.[0];
+          if (dataZoom && dataZoom.startValue !== undefined && dataZoom.endValue !== undefined) {
+            const range = {
+              start: new Date(dataZoom.startValue).toISOString(),
+              end: new Date(dataZoom.endValue).toISOString(),
+            };
+            setLocalTimeRange(range);
+            setSelectedTimeRange(range);
+            onTimeRangeChange?.(range);
+          }
+        }
+      },
     }),
-    [data, onDataClick, onClick, onTimeChange, setCurrentTime]
+    [dataWithThresholdFlag, onDataClick, onClick, onTimeChange, onTimeRangeChange, setCurrentTime, setSelectedTimeRange]
   );
 
-  if (data.length === 0) {
+  const toggleThreshold = (index: number) => {
+    const newLines = [...thresholdLines];
+    newLines[index] = { ...newLines[index], enabled: !newLines[index].enabled };
+    setThresholdLines(newLines);
+  };
+
+  if (dataWithThresholdFlag.length === 0) {
     return (
       <div
         className={classNames('water-sdk-hydrograph', className)}
@@ -336,13 +443,13 @@ export const Hydrograph: React.FC<HydrographProps> = ({
         ...style,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: theme.spacing.md }}>
-        {title && (
-          <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: theme.colors.text.primary }}>
-            {title}
-          </h4>
-        )}
-        <div style={{ display: 'flex', gap: theme.spacing.sm, alignItems: 'center' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: theme.spacing.md, flexWrap: 'wrap', gap: theme.spacing.sm }}>
+        <div>
+          {title && (
+            <h4 style={{ margin: '0 0 8px', fontSize: '14px', fontWeight: 600, color: theme.colors.text.primary }}>
+              {title}
+            </h4>
+          )}
           {showSwitcher && (
             <div style={{ display: 'flex', borderRadius: theme.radius.sm, overflow: 'hidden', border: `1px solid ${theme.colors.border}` }}>
               {(['water', 'flow', 'both'] as const).map((type) => (
@@ -365,20 +472,105 @@ export const Hydrograph: React.FC<HydrographProps> = ({
             </div>
           )}
         </div>
+
+        <div style={{ display: 'flex', gap: theme.spacing.sm, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            onClick={() => setShowYoY(!showYoYLine)}
+            style={{
+              padding: '3px 10px',
+              borderRadius: '12px',
+              border: `1px solid ${showYoYLine ? theme.colors.warning : theme.colors.border}`,
+              backgroundColor: showYoYLine ? `${theme.colors.warning}15` : 'transparent',
+              color: showYoYLine ? theme.colors.warning : theme.colors.text.secondary,
+              cursor: 'pointer',
+              fontSize: '11px',
+            }}
+          >
+            同比
+          </button>
+          <button
+            onClick={() => setShowMoM(!showMoMLine)}
+            style={{
+              padding: '3px 10px',
+              borderRadius: '12px',
+              border: `1px solid ${showMoMLine ? theme.colors.success : theme.colors.border}`,
+              backgroundColor: showMoMLine ? `${theme.colors.success}15` : 'transparent',
+              color: showMoMLine ? theme.colors.success : theme.colors.text.secondary,
+              cursor: 'pointer',
+              fontSize: '11px',
+            }}
+          >
+            环比
+          </button>
+        </div>
       </div>
 
-      {showLegend && (
-        <Legend
-          items={legendItems}
-          onChange={setLegendItems}
-          position="top"
-        />
+      {showThresholdToggle && thresholdLines.length > 0 && (
+        <div style={{ display: 'flex', gap: theme.spacing.sm, marginBottom: theme.spacing.sm, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '12px', color: theme.colors.text.secondary, display: 'flex', alignItems: 'center' }}>
+            阈值线：
+          </span>
+          {thresholdLines.map((line, index) => (
+            <button
+              key={line.name}
+              onClick={() => toggleThreshold(index)}
+              style={{
+                padding: '2px 10px',
+                borderRadius: '10px',
+                border: `1px solid ${line.enabled ? (line.color || theme.colors.danger) : theme.colors.border}`,
+                backgroundColor: line.enabled ? `${line.color || theme.colors.danger}10` : 'transparent',
+                color: line.enabled ? (line.color || theme.colors.danger) : theme.colors.text.disabled,
+                cursor: 'pointer',
+                fontSize: '11px',
+              }}
+            >
+              {line.name} ({line.value})
+            </button>
+          ))}
+        </div>
+      )}
+
+      {showTimeRangePicker && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: theme.spacing.sm, marginBottom: theme.spacing.sm, fontSize: '12px' }}>
+          <span style={{ color: theme.colors.text.secondary }}>时间范围：</span>
+          <span style={{ color: theme.colors.text.primary }}>
+            {activeTimeRange
+              ? `${formatTime(activeTimeRange.start, 'MM-DD HH:mm')} ~ ${formatTime(activeTimeRange.end, 'MM-DD HH:mm')}`
+              : '全部'}
+          </span>
+          {activeTimeRange && (
+            <button
+              onClick={() => {
+                setLocalTimeRange(null);
+                setSelectedTimeRange(null);
+                onTimeRangeChange?.({ start: '', end: '' } as any);
+              }}
+              style={{
+                padding: '1px 8px',
+                border: `1px solid ${theme.colors.border}`,
+                borderRadius: '10px',
+                backgroundColor: 'transparent',
+                color: theme.colors.text.secondary,
+                cursor: 'pointer',
+                fontSize: '11px',
+              }}
+            >
+              重置
+            </button>
+          )}
+        </div>
+      )}
+
+      {activeCurrentTime && (
+        <div style={{ fontSize: '12px', color: theme.colors.primary, marginBottom: theme.spacing.sm }}>
+          📍 当前时间：{formatTime(activeCurrentTime)}
+        </div>
       )}
 
       <ReactECharts
         ref={chartRef}
         option={chartOption}
-        style={{ height: '300px', width: '100%' }}
+        style={{ height: '320px', width: '100%' }}
         notMerge={true}
         onEvents={onChartEvents}
         theme={mode === 'dark' ? 'dark' : undefined}
